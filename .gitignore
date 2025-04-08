@@ -1,0 +1,87 @@
+# Dependências
+node_modules
+.pnp
+.pnp.js
+.yarn/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ambiente de desenvolvimento
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build e produção
+/build
+/dist
+/.next/
+/out/
+.DS_Store
+
+# IDEs e editores
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.bak
+
+# Sistema operacional
+Thumbs.db
+.DS_Store
+*.pem
+
+# Testes e cobertura
+/coverage
+.nyc_output
+
+# Cache
+.cache/
+.eslintcache
+.stylelintcache
+
+# Logs
+logs
+*.log
+
+# Arquivos temporários
+*.tmp
+*.temp
+.temp/
+tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.logs
+*.iml
+target/
+
+# Outros
+.vercel
+.env*.local 
+
+
+#videos
+/public/uploads/
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.flv
+*.wmv
+publi/
