@@ -47,8 +47,8 @@ const Comments = ({
       
       const comment = {
         text: newComment,
-        author: user.name,
-        email: user.email,
+        author: user?.name || 'Anonymous',
+        email: user?.email || 'anonymous@example.com',
         videoTime: parseFloat(currentTime) || 0,
         parentId: null,
         drawing: tempDrawing ? {
@@ -82,8 +82,8 @@ const Comments = ({
     try {
       const reply = {
         text: replyText,
-        author: user.name,
-        email: user.email,
+        author: user?.name || 'Anonymous',
+        email: user?.email || 'anonymous@example.com',
         videoTime: parseFloat(currentTime) || 0,
         parentId: parentComment.id,
         drawing: null
@@ -95,8 +95,8 @@ const Comments = ({
       const formattedReply = {
         id: Date.now(), // ID temporário
         text: replyText,
-        author: user.name,
-        email: user.email,
+        author: user?.name || 'Anonymous',
+        email: user?.email || 'anonymous@example.com',
         videoTime: parseFloat(currentTime) || 0,
         timestamp: new Date().toISOString(),
         likes: 0,

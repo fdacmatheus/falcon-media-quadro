@@ -400,8 +400,8 @@ const VideoPlayer = forwardRef(({
 
       const commentData = {
         text: comment.text,
-        author: user.name,
-        email: user.email,
+        author: user?.name || 'Anonymous',
+        email: user?.email || 'anonymous@example.com',
         videoTime: currentTime,
         drawing: tempDrawing,
         parentId: comment.parentId || null
