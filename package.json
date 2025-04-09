@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "init-db": "node src/scripts/initDb.cjs",
-    "migrate": "node src/config/migration.cjs",
+    "migrate": "node src/config/migration.js",
     "add-hidden-flag": "node src/config/add_hidden_flag.js"
   },
   "dependencies": {
