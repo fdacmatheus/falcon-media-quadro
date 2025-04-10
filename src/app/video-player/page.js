@@ -97,31 +97,47 @@ function VideoPlayerPageContent() {
   };
 
   const handleNewComment = async (comment) => {
-    if (!projectId || !folderId || !videoId) return;
+    if (!projectId || !folderId || !videoId) {
+      console.error('IDs ausentes:', { projectId, folderId, videoId });
+      return;
+    }
 
     try {
+      console.log('handleNewComment - Comentário recebido:', comment);
+      
+      const commentData = {
+        text: comment.text,
+        user_name: user?.name || 'Usuário',
+        user_email: comment.email || user?.email || 'default@email.com',
+        video_time: comment.videoTime,
+        project_id: projectId,
+        folder_id: folderId,
+        video_id: videoId,
+        drawing_data: comment.drawing ? JSON.stringify(comment.drawing) : null
+      };
+      
+      console.log('handleNewComment - Dados formatados para API:', commentData);
+      console.log('handleNewComment - URL da requisição:', `/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`);
+
       const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          text: comment.text,
-          user_name: user?.name || 'Usuário',
-          user_email: comment.email || user?.email || 'default@email.com',
-          video_time: comment.videoTime,
-          project_id: projectId,
-          folder_id: folderId,
-          video_id: videoId,
-          drawing_data: comment.drawing ? JSON.stringify(comment.drawing) : null
-        }),
+        body: JSON.stringify(commentData),
       });
 
+      console.log('handleNewComment - Status da resposta:', response.status);
+      
       if (!response.ok) {
-        throw new Error('Falha ao salvar comentário');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('handleNewComment - Erro na resposta:', errorData);
+        throw new Error(`Falha ao salvar comentário: ${response.status} ${errorData.error || ''}`);
       }
 
       const savedComment = await response.json();
+      console.log('handleNewComment - Comentário salvo com sucesso:', savedComment);
+
       const formattedComment = {
         ...savedComment,
         author: savedComment.user_name,
@@ -139,7 +155,7 @@ function VideoPlayerPageContent() {
       setTempDrawing(null);
     } catch (error) {
       console.error('Erro ao salvar comentário:', error);
-      toast.error('Erro ao salvar comentário');
+      toast.error(`Erro ao salvar comentário: ${error.message}`);
     }
   };
 
@@ -183,6 +199,8 @@ function VideoPlayerPageContent() {
               tempDrawing={tempDrawing}
               onClearDrawing={() => setTempDrawing(null)}
               videoId={videoId}
+              projectId={projectId}
+              folderId={folderId}
             />
           </div>
         )}

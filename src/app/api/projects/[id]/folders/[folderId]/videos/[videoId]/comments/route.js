@@ -37,10 +37,21 @@ export async function POST(request, { params }) {
     const projectId = paramsData.id;
     const folderId = paramsData.folderId;
     const videoId = paramsData.videoId;
-    const data = await request.json();
     
-    console.log('POST /comments - Parâmetros:', { projectId, folderId, videoId });
-    console.log('POST /comments - Dados recebidos:', data);
+    console.log('POST /comments - Raw params:', paramsData);
+    console.log('POST /comments - Parâmetros extraídos:', { projectId, folderId, videoId });
+    
+    let data;
+    try {
+      data = await request.json();
+      console.log('POST /comments - Dados recebidos (JSON):', data);
+    } catch (e) {
+      console.error('Erro ao parsear o corpo da requisição:', e);
+      return NextResponse.json({
+        error: 'Erro no formato dos dados',
+        details: e.message
+      }, { status: 400 });
+    }
 
     // Validate required data
     if (!projectId || !folderId || !videoId) {
@@ -51,7 +62,7 @@ export async function POST(request, { params }) {
       }, { status: 400 });
     }
 
-    if (!data.text && !data.drawing) {
+    if (!data.text && !data.drawing_data) {
       console.error('Dados do comentário inválidos:', data);
       return NextResponse.json({
         error: 'Dados inválidos',
@@ -59,23 +70,43 @@ export async function POST(request, { params }) {
       }, { status: 400 });
     }
 
-    // Create the comment
-    const savedComment = await DbService.createComment(
+    console.log('Chamando DbService.createComment com:', {
       projectId,
-      folderId,
+      folderId, 
       videoId,
-      data.parentId || null,
-      data.author || 'Anonymous',
-      data.email || 'anonymous@example.com',
-      data.text || '',
-      data.videoTime || 0,
-      data.drawing ? JSON.stringify(data.drawing) : null
-    );
+      parentId: data.parentId,
+      userName: data.user_name,
+      userEmail: data.user_email,
+      text: data.text,
+      videoTime: data.video_time,
+      drawingData: data.drawing_data ? 'present' : null
+    });
 
-    console.log('POST /comments - Comentário salvo:', savedComment);
-    return NextResponse.json(savedComment);
+    // Create the comment
+    try {
+      const savedComment = await DbService.createComment(
+        projectId,
+        folderId,
+        videoId,
+        data.parentId || null,
+        data.user_name || 'Anonymous',
+        data.user_email || 'anonymous@example.com',
+        data.text || '',
+        data.video_time || 0,
+        data.drawing_data
+      );
+
+      console.log('POST /comments - Comentário salvo:', savedComment);
+      return NextResponse.json(savedComment);
+    } catch (dbError) {
+      console.error('Erro do DbService ao criar comentário:', dbError);
+      return NextResponse.json({
+        error: 'Erro do banco de dados',
+        details: dbError.message
+      }, { status: 500 });
+    }
   } catch (error) {
-    console.error('Erro ao salvar comentário:', error);
+    console.error('Erro geral ao salvar comentário:', error);
     return NextResponse.json({
       error: 'Erro ao salvar comentário',
       details: error.message

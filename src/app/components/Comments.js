@@ -39,12 +39,15 @@ const Comments = ({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!newComment.trim() && !tempDrawing) return;
+    console.log("Form submitted!");
+    
+    if (!newComment.trim() && !tempDrawing) {
+      console.log("No comment text or drawing to submit");
+      return;
+    }
 
     try {
-      console.log('Current time when submitting comment:', currentTime);
-      console.log('Drawing data present:', !!tempDrawing);
-      
+      console.log("Preparing comment data");
       const comment = {
         text: newComment,
         author: user?.name || 'Anonymous',
@@ -57,21 +60,25 @@ const Comments = ({
         } : null
       };
 
-      console.log('Sending comment with drawing:', comment);
-
-      if (onCommentSubmit) {
-        await onCommentSubmit(comment);
-      } else if (onNewComment) {
+      console.log("Comment data prepared:", comment);
+      console.log("onNewComment available:", !!onNewComment);
+      
+      if (onNewComment) {
+        console.log("Calling onNewComment");
         await onNewComment(comment);
+        console.log("onNewComment completed");
+      } else {
+        console.log("No onNewComment handler available");
       }
       
+      console.log("Clearing comment form");
       setNewComment('');
       if (onClearDrawing) {
         onClearDrawing();
       }
     } catch (error) {
       console.error('Error saving comment:', error);
-      toast.error('Failed to save comment');
+      toast.error('Falha ao salvar comentário');
     }
   };
 
@@ -356,6 +363,10 @@ const Comments = ({
     }
   };
 
+  const handleSendClick = (e) => {
+    console.log("Send button clicked!", { newComment, hasDrawing: !!tempDrawing });
+  };
+
   const CommentItem = ({ comment, isReply = false, parentId = null }) => {
     // Definir autor padrão e likedBy padrão se não existirem
     const authorName = comment.author || comment.user_name || 'matheus';
@@ -578,60 +589,45 @@ const Comments = ({
 
       <div className="p-4 border-b border-[#3F3F3F]">
         {!replyingTo && (
-          <form onSubmit={handleSubmit}>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[#D00102] font-bold">
-                {formatVideoTime(currentTime)}
-              </span>
-              <span className="text-gray-400">Current time</span>
-              {tempDrawing && (
-                <span className="text-[#D00102] text-sm flex items-center gap-1">
-                  <PencilIcon className="w-4 h-4" />
-                  Drawing added
-                  <button
-                    type="button"
-                    onClick={onClearDrawing}
-                    className="text-gray-400 hover:text-white ml-1"
-                  >
-                    (remove)
-                  </button>
-                </span>
-              )}
-            </div>
-            
-            <div className="flex flex-col gap-2">
-              <input
-                type="text"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Write a comment..."
-                className="w-full bg-[#3F3F3F] text-white px-4 py-2 rounded-lg focus:outline-none"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={!newComment.trim() && !tempDrawing}
-                  className={`flex-1 bg-[#D00102] text-white px-4 py-2 rounded-lg transition-colors ${
-                    !newComment.trim() && !tempDrawing 
-                      ? 'opacity-50 cursor-not-allowed' 
-                      : 'hover:bg-[#D00102]/90'
-                  }`}
-                >
-                  Send
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    console.log('Draw button clicked, dispatching startDrawing event');
-                    const event = new CustomEvent('startDrawing');
-                    window.dispatchEvent(event);
-                  }}
-                  className="bg-[#3F3F3F] text-white px-4 py-2 rounded-lg hover:bg-[#4F4F4F] transition-colors flex items-center gap-2"
-                >
-                  <PencilIcon className="w-5 h-5" />
-                  Draw
-                </button>
+          <form onSubmit={handleSubmit} className="p-4 border-t border-gray-700">
+            <div className="flex items-start">
+              <div className="flex-grow">
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  className="w-full p-2 bg-gray-800 text-white rounded-md border border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  placeholder="Adicione um comentário..."
+                  rows={2}
+                />
+                {tempDrawing && (
+                  <div className="mt-2 relative">
+                    <img 
+                      src={tempDrawing}
+                      alt="Drawing"
+                      className="max-h-32 rounded-md"
+                    />
+                    <button
+                      type="button"
+                      onClick={onClearDrawing}
+                      className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 text-xs"
+                    >
+                      X
+                    </button>
+                  </div>
+                )}
               </div>
+              <button
+                type="submit"
+                disabled={!newComment.trim() && !tempDrawing}
+                className={`flex-1 bg-[#D00102] text-white px-4 py-2 rounded-lg transition-colors ${
+                  !newComment.trim() && !tempDrawing 
+                    ? 'opacity-50 cursor-not-allowed' 
+                    : 'hover:bg-[#D00102]/90'
+                }`}
+                onClick={handleSendClick}
+              >
+                Send
+              </button>
             </div>
           </form>
         )}
