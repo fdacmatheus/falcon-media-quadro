@@ -683,6 +683,11 @@ const Comments = ({
                 <button
                   type="submit"
                   disabled={!newComment.trim() && !tempDrawing}
+                  onClick={(e) => {
+                    // Registrar o clique explicitamente
+                    console.log('Submit button clicked');
+                    // O form onSubmit já irá chamar handleSubmit, este log é apenas para depuração
+                  }}
                   className={`flex-1 bg-[#D00102] text-white px-4 py-2 rounded-lg transition-colors ${
                     !newComment.trim() && !tempDrawing 
                       ? 'opacity-50 cursor-not-allowed' 

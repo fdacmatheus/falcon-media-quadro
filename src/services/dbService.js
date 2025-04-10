@@ -315,87 +315,123 @@ export class DbService {
         parentId,
         userName,
         userEmail,
-        text,
+        text: text ? text.substring(0, 20) + '...' : null, // Mostrar apenas parte do texto para não poluir logs
         videoTime,
         hasDrawing: !!drawingData
       });
 
+      // Verificações de parâmetros
+      if (!projectId || !folderId || !videoId) {
+        throw new Error('IDs de projeto, pasta e vídeo são obrigatórios');
+      }
+
+      if (!text && !drawingData) {
+        throw new Error('Comentário deve ter texto ou desenho');
+      }
+
+      // Gerar ID único e timestamp
       const id = uuidv4();
       const now = new Date().toISOString();
 
-      // Se for uma resposta (reply), buscar o comentário pai para validação
+      // Se for uma resposta, buscar o comentário pai para validação
       if (parentId) {
-        console.log('Buscando comentário pai:', parentId);
-        const parentComment = await this.getComment(parentId);
-        if (!parentComment) {
-          console.error('Comentário pai não encontrado:', parentId);
-          throw new Error('Comentário pai não encontrado');
-        }
-        // Usar os IDs do comentário pai para garantir consistência
-        projectId = parentComment.project_id;
-        folderId = parentComment.folder_id;
-        videoId = parentComment.video_id;
-        console.log('Usando IDs do comentário pai:', { projectId, folderId, videoId });
-      }
-
-      // Processar os dados de desenho
-      let processedDrawingData = drawingData;
-      
-      if (typeof drawingData === 'string') {
         try {
-          // Tenta fazer parse para ver se já é um JSON
-          const parsed = JSON.parse(drawingData);
-          processedDrawingData = drawingData;
-          console.log('Drawing data já é um JSON válido');
-        } catch (e) {
-          // Se não for um JSON válido, é provavelmente o formato antigo
-          console.log('Convertendo drawing data para novo formato');
-          processedDrawingData = JSON.stringify({
-            imageData: drawingData,
-            timestamp: videoTime
-          });
+          console.log('Buscando comentário pai:', parentId);
+          const parentComment = await this.getComment(parentId);
+          if (!parentComment) {
+            console.error('Comentário pai não encontrado:', parentId);
+            throw new Error('Comentário pai não encontrado');
+          }
+          // Usar os IDs do comentário pai para garantir consistência
+          projectId = parentComment.project_id;
+          folderId = parentComment.folder_id;
+          videoId = parentComment.video_id;
+          console.log('Usando IDs do comentário pai:', { projectId, folderId, videoId });
+        } catch (parentError) {
+          console.error('Erro ao validar comentário pai:', parentError);
+          // Continuar com os IDs originais em caso de erro
         }
-      } else if (drawingData && typeof drawingData === 'object') {
-        console.log('Convertendo objeto drawing para JSON string');
-        processedDrawingData = JSON.stringify(drawingData);
       }
 
-      console.log('Inserindo comentário no banco');
-      await query(
-        `INSERT INTO comments (
-          id, project_id, folder_id, video_id, parent_id,
-          user_name, user_email, text, video_time, drawing_data,
-          likes, liked_by, resolved, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          projectId,
-          folderId,
-          videoId,
-          parentId,
-          userName,
-          userEmail,
-          text,
-          videoTime,
-          processedDrawingData,
-          0,
-          '[]',
-          0,
-          now,
-          now
-        ]
-      );
-
-      console.log('Buscando comentário criado');
-      const result = await query('SELECT * FROM comments WHERE id = ?', [id]);
-      if (!result.rows[0]) {
-        throw new Error('Comentário não foi criado corretamente');
-      }
+      // Processar dados de desenho para garantir formato consistente
+      let processedDrawingData = null;
       
-      console.log('Comentário criado com sucesso:', result.rows[0]);
-      return result.rows[0];
+      if (drawingData) {
+        if (typeof drawingData === 'string') {
+          try {
+            // Verifica se já é um JSON válido
+            JSON.parse(drawingData);
+            processedDrawingData = drawingData;
+            console.log('Drawing data já é JSON válido');
+          } catch (e) {
+            // Se não for JSON válido, converte para formato padrão
+            console.log('Convertendo drawing data para formato padrão');
+            processedDrawingData = JSON.stringify({
+              imageData: drawingData,
+              timestamp: videoTime
+            });
+          }
+        } else if (typeof drawingData === 'object') {
+          // Converte objetos para string JSON
+          console.log('Convertendo objeto drawing para JSON string');
+          processedDrawingData = JSON.stringify(drawingData);
+        }
+      }
+
+      // Valores padrão para campos opcionais
+      const safeUserName = userName || 'Anônimo';
+      const safeUserEmail = userEmail || 'anonymous@example.com';
+      const safeText = text || '';
+      const safeVideoTime = videoTime || 0;
+
+      console.log('Inserindo comentário no banco com SQL parametrizado');
+      
+      try {
+        // Inserir usando placeholders posicionais (?) em vez de nomeados ($1, $2...)
+        await query(
+          `INSERT INTO comments (
+            id, project_id, folder_id, video_id, parent_id,
+            user_name, user_email, text, video_time, drawing_data,
+            likes, liked_by, resolved, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            projectId,
+            folderId,
+            videoId,
+            parentId,
+            safeUserName,
+            safeUserEmail,
+            safeText,
+            safeVideoTime,
+            processedDrawingData,
+            0,
+            '[]',
+            0,
+            now,
+            now
+          ]
+        );
+
+        console.log('Comentário inserido, buscando para retornar');
+        const result = await query('SELECT * FROM comments WHERE id = ?', [id]);
+        if (!result.rows || result.rows.length === 0) {
+          throw new Error('Comentário não encontrado após inserção');
+        }
+        
+        console.log('Comentário criado com sucesso:', {
+          id: result.rows[0].id,
+          text: result.rows[0].text ? result.rows[0].text.substring(0, 20) + '...' : null,
+          hasDrawing: !!result.rows[0].drawing_data
+        });
+        
+        return result.rows[0];
+      } catch (dbError) {
+        console.error('Erro SQL ao inserir comentário:', dbError);
+        throw new Error(`Erro ao inserir comentário no banco: ${dbError.message}`);
+      }
     } catch (error) {
-      console.error('Erro ao criar comentário:', error);
+      console.error('Erro geral ao criar comentário:', error);
       throw error;
     }
   }
