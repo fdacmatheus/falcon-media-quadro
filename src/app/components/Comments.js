@@ -67,14 +67,74 @@ const Comments = ({
 
       console.log('Comment object prepared:', comment);
 
+      // Primeiro, verificar se temos um handler externo para o envio
       if (onCommentSubmit) {
         console.log('Using onCommentSubmit handler');
         await onCommentSubmit(comment);
       } else if (onNewComment) {
         console.log('Using onNewComment handler');
         await onNewComment(comment);
+      } else if (projectId && folderId && videoId) {
+        // Se não temos handlers externos mas temos os IDs, fazer a requisição diretamente
+        console.log('No handler provided, making direct API call');
+        
+        // Preparar dados para a API
+        const requestBody = {
+          text: comment.text || '',
+          user_name: user?.name || comment.author || 'Anônimo',
+          user_email: user?.email || comment.email || 'anonymous@example.com',
+          video_time: comment.videoTime,
+          parentId: comment.parentId || null,
+          project_id: projectId,
+          folder_id: folderId,
+          video_id: videoId,
+          drawing_data: comment.drawing ? JSON.stringify(comment.drawing) : null
+        };
+        
+        console.log('Making direct API call with:', requestBody);
+        
+        // Tentar fazer a requisição
+        const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
+        
+        console.log('API response status:', response.status);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API error:', errorText);
+          throw new Error(`Falha ao salvar comentário: ${errorText}`);
+        }
+        
+        const savedComment = await response.json();
+        console.log('Comment saved successfully:', savedComment);
+        
+        // Atualizar a lista de comentários na interface
+        const formattedComment = {
+          ...savedComment,
+          author: savedComment.user_name,
+          email: savedComment.user_email,
+          timestamp: savedComment.created_at,
+          videoTime: parseFloat(savedComment.video_time) || 0,
+          likes: parseInt(savedComment.likes) || 0,
+          likedBy: savedComment.liked_by ? JSON.parse(savedComment.liked_by) : [],
+          replies: [],
+          resolved: Boolean(savedComment.resolved),
+          drawing: savedComment.drawing_data ? JSON.parse(savedComment.drawing_data) : null
+        };
+        
+        if (setComments) {
+          setComments(prevComments => [formattedComment, ...prevComments]);
+        }
+        
+        toast.success('Comentário adicionado com sucesso!');
       } else {
-        console.error('No comment submission handler provided!');
+        console.error('No comment submission handler provided and missing required IDs');
+        toast.error('Erro ao enviar comentário: faltam parâmetros necessários');
       }
       
       setNewComment('');
@@ -83,7 +143,7 @@ const Comments = ({
       }
     } catch (error) {
       console.error('Error saving comment:', error);
-      toast.error('Failed to save comment');
+      toast.error('Erro ao salvar comentário: ' + error.message);
     }
   };
 

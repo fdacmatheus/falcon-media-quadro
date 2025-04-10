@@ -34,6 +34,8 @@ export async function GET(request, { params }) {
 export async function POST(request, { params }) {
   console.log('API: POST /comments - Início da solicitação');
   try {
+    console.log('API: POST /comments - Headers:', Object.fromEntries(request.headers));
+    
     const paramsData = await params;
     const projectId = paramsData.id;
     const folderId = paramsData.folderId;
@@ -43,10 +45,31 @@ export async function POST(request, { params }) {
     
     let data;
     try {
-      data = await request.json();
-      console.log('API: POST /comments - Dados do corpo da requisição:', data);
+      // Verificar se o corpo da requisição está presente
+      const clonedRequest = request.clone();
+      const bodyText = await clonedRequest.text();
+      console.log('API: POST /comments - Corpo da requisição (raw):', bodyText);
+      
+      if (!bodyText || bodyText.trim() === '') {
+        console.error('API: Corpo da requisição vazio');
+        return NextResponse.json({
+          error: 'Corpo da requisição vazio',
+          details: 'A requisição não contém dados'
+        }, { status: 400 });
+      }
+      
+      try {
+        data = JSON.parse(bodyText);
+        console.log('API: POST /comments - Dados do corpo da requisição (parsed):', data);
+      } catch (jsonError) {
+        console.error('API: Erro ao fazer parse do JSON:', jsonError);
+        return NextResponse.json({
+          error: 'JSON inválido',
+          details: jsonError.message
+        }, { status: 400 });
+      }
     } catch (parseError) {
-      console.error('API: Erro ao analisar JSON do corpo da requisição:', parseError);
+      console.error('API: Erro ao analisar corpo da requisição:', parseError);
       return NextResponse.json({
         error: 'Erro ao analisar corpo da requisição',
         details: parseError.message
@@ -74,6 +97,18 @@ export async function POST(request, { params }) {
     
     // Create the comment
     try {
+      console.log('API: Chamando DbService.createComment com parâmetros:', {
+        projectId,
+        folderId,
+        videoId,
+        parentId: data.parentId || null,
+        userName: data.user_name || 'Anonymous',
+        userEmail: data.user_email || 'anonymous@example.com',
+        text: data.text || '',
+        videoTime: data.video_time || 0,
+        hasDrawingData: !!data.drawing_data
+      });
+      
       const savedComment = await DbService.createComment(
         projectId,
         folderId,
@@ -90,16 +125,20 @@ export async function POST(request, { params }) {
       return NextResponse.json(savedComment);
     } catch (dbError) {
       console.error('API: Erro ao salvar comentário no banco de dados:', dbError);
+      console.error('API: Stack trace:', dbError.stack);
       return NextResponse.json({
         error: 'Erro ao salvar comentário no banco de dados',
-        details: dbError.message
+        details: dbError.message,
+        stack: dbError.stack
       }, { status: 500 });
     }
   } catch (error) {
     console.error('API: Erro geral ao processar solicitação POST /comments:', error);
+    console.error('API: Stack trace:', error.stack);
     return NextResponse.json({
       error: 'Erro ao salvar comentário',
-      details: error.message
+      details: error.message,
+      stack: error.stack
     }, { status: 500 });
   }
 } 

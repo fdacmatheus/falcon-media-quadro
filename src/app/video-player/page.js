@@ -226,6 +226,8 @@ function VideoPlayerPageContent() {
               tempDrawing={tempDrawing}
               onClearDrawing={() => setTempDrawing(null)}
               videoId={videoId}
+              projectId={projectId}
+              folderId={folderId}
             />
           </div>
         )}
