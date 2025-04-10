@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { DbService } from '@/services/dbService';
+import { DbService } from '../../../../../../../../../services/dbService';
 
 export async function POST(request, { params }) {
   try {
