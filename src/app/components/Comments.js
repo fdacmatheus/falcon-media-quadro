@@ -25,6 +25,67 @@ const Comments = ({
   const [editingComment, setEditingComment] = useState(null);
   const [editText, setEditText] = useState('');
 
+  // Função para fazer chamada direta à API
+  const makeDirectAPICall = async (comment) => {
+    console.log('Making direct API call for comment...');
+    
+    // Preparar dados para a API
+    const requestBody = {
+      text: comment.text || '',
+      user_name: user?.name || comment.author || 'Anônimo',
+      user_email: user?.email || comment.email || 'anonymous@example.com',
+      video_time: comment.videoTime,
+      parentId: comment.parentId || null,
+      project_id: projectId,
+      folder_id: folderId,
+      video_id: videoId,
+      drawing_data: comment.drawing ? JSON.stringify(comment.drawing) : null
+    };
+    
+    console.log('Direct API call with data:', requestBody);
+    
+    // Tentar fazer a requisição
+    const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+    
+    console.log('API response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API error:', errorText);
+      throw new Error(`Falha ao salvar comentário: ${errorText}`);
+    }
+    
+    const savedComment = await response.json();
+    console.log('Comment saved successfully:', savedComment);
+    
+    // Atualizar a lista de comentários na interface
+    const formattedComment = {
+      ...savedComment,
+      author: savedComment.user_name,
+      email: savedComment.user_email,
+      timestamp: savedComment.created_at,
+      videoTime: parseFloat(savedComment.video_time) || 0,
+      likes: parseInt(savedComment.likes) || 0,
+      likedBy: savedComment.liked_by ? JSON.parse(savedComment.liked_by) : [],
+      replies: [],
+      resolved: Boolean(savedComment.resolved),
+      drawing: savedComment.drawing_data ? JSON.parse(savedComment.drawing_data) : null
+    };
+    
+    if (setComments) {
+      setComments(prevComments => [formattedComment, ...prevComments]);
+    }
+    
+    toast.success('Comentário adicionado com sucesso!');
+    return formattedComment;
+  };
+
   const formatVideoTime = (timeInSeconds) => {
     if (isNaN(timeInSeconds) || timeInSeconds === null) return '0:00';
     const hours = Math.floor(timeInSeconds / 3600);
@@ -70,68 +131,40 @@ const Comments = ({
       // Primeiro, verificar se temos um handler externo para o envio
       if (onCommentSubmit) {
         console.log('Using onCommentSubmit handler');
-        await onCommentSubmit(comment);
+        try {
+          await onCommentSubmit(comment);
+          console.log('onCommentSubmit executed successfully');
+        } catch (submitError) {
+          console.error('Error in onCommentSubmit handler:', submitError);
+          console.log('Falling back to direct API call');
+          
+          // Se falhar, tenta fazer a chamada direta à API
+          if (projectId && folderId && videoId) {
+            await makeDirectAPICall(comment);
+          } else {
+            throw submitError; // Re-throw if we can't make a direct call
+          }
+        }
       } else if (onNewComment) {
         console.log('Using onNewComment handler');
-        await onNewComment(comment);
+        try {
+          await onNewComment(comment);
+          console.log('onNewComment executed successfully');
+        } catch (newCommentError) {
+          console.error('Error in onNewComment handler:', newCommentError);
+          console.log('Falling back to direct API call');
+          
+          // Se falhar, tenta fazer a chamada direta à API
+          if (projectId && folderId && videoId) {
+            await makeDirectAPICall(comment);
+          } else {
+            throw newCommentError; // Re-throw if we can't make a direct call
+          }
+        }
       } else if (projectId && folderId && videoId) {
         // Se não temos handlers externos mas temos os IDs, fazer a requisição diretamente
         console.log('No handler provided, making direct API call');
-        
-        // Preparar dados para a API
-        const requestBody = {
-          text: comment.text || '',
-          user_name: user?.name || comment.author || 'Anônimo',
-          user_email: user?.email || comment.email || 'anonymous@example.com',
-          video_time: comment.videoTime,
-          parentId: comment.parentId || null,
-          project_id: projectId,
-          folder_id: folderId,
-          video_id: videoId,
-          drawing_data: comment.drawing ? JSON.stringify(comment.drawing) : null
-        };
-        
-        console.log('Making direct API call with:', requestBody);
-        
-        // Tentar fazer a requisição
-        const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-        });
-        
-        console.log('API response status:', response.status);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('API error:', errorText);
-          throw new Error(`Falha ao salvar comentário: ${errorText}`);
-        }
-        
-        const savedComment = await response.json();
-        console.log('Comment saved successfully:', savedComment);
-        
-        // Atualizar a lista de comentários na interface
-        const formattedComment = {
-          ...savedComment,
-          author: savedComment.user_name,
-          email: savedComment.user_email,
-          timestamp: savedComment.created_at,
-          videoTime: parseFloat(savedComment.video_time) || 0,
-          likes: parseInt(savedComment.likes) || 0,
-          likedBy: savedComment.liked_by ? JSON.parse(savedComment.liked_by) : [],
-          replies: [],
-          resolved: Boolean(savedComment.resolved),
-          drawing: savedComment.drawing_data ? JSON.parse(savedComment.drawing_data) : null
-        };
-        
-        if (setComments) {
-          setComments(prevComments => [formattedComment, ...prevComments]);
-        }
-        
-        toast.success('Comentário adicionado com sucesso!');
+        await makeDirectAPICall(comment);
       } else {
         console.error('No comment submission handler provided and missing required IDs');
         toast.error('Erro ao enviar comentário: faltam parâmetros necessários');
@@ -676,7 +709,7 @@ const Comments = ({
                 type="text"
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Write a comment..."
+                placeholder={user ? "Write a comment..." : "Write an anonymous comment..."}
                 className="w-full bg-[#3F3F3F] text-white px-4 py-2 rounded-lg focus:outline-none"
               />
               <div className="flex gap-2">

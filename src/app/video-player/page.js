@@ -214,23 +214,22 @@ function VideoPlayerPageContent() {
           versions={videoVersions}
           onVersionChange={handleVersionChange}
         />
-        {user && (
-          <div className="mt-4 bg-[#1F1F1F] rounded-lg overflow-hidden">
-            <Comments 
-              user={user} 
-              currentTime={currentTime}
-              onTimeClick={handleSeekToTime}
-              onNewComment={handleNewComment}
-              comments={comments}
-              setComments={setComments}
-              tempDrawing={tempDrawing}
-              onClearDrawing={() => setTempDrawing(null)}
-              videoId={videoId}
-              projectId={projectId}
-              folderId={folderId}
-            />
-          </div>
-        )}
+        <div className="mt-4 bg-[#1F1F1F] rounded-lg overflow-hidden">
+          <Comments 
+            user={user} 
+            currentTime={currentTime}
+            onTimeClick={handleSeekToTime}
+            onNewComment={handleNewComment}
+            comments={comments}
+            setComments={setComments}
+            tempDrawing={tempDrawing}
+            onClearDrawing={() => setTempDrawing(null)}
+            videoId={videoId}
+            projectId={projectId}
+            folderId={folderId}
+            onCommentSubmit={handleNewComment}
+          />
+        </div>
       </div>
     </main>
   );
