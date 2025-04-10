@@ -344,21 +344,36 @@ export default function FolderContent({ projectId, folderId }) {
 
   const handleCommentSubmit = async (comment) => {
     try {
-      if (!selectedVideo?.id || !user) {
-        toast.error('Error: User not logged in or video not selected');
+      if (!selectedVideo?.id) {
+        console.error('Faltam IDs necessários:', { projectId, folderId, videoId: selectedVideo?.id });
+        toast.error('Erro: Vídeo não selecionado');
+        return;
+      }
+
+      if (!projectId || !folderId) {
+        console.error('Faltam IDs necessários:', { projectId, folderId, videoId: selectedVideo?.id });
+        toast.error('Erro: IDs de projeto ou pasta ausentes');
+        return;
+      }
+
+      if (!user) {
+        toast.error('Erro: Usuário não logado');
         return;
       }
 
       const commentData = {
         text: comment.text,
-        author: user?.name || 'Anonymous',
-        email: user?.email || 'anonymous@example.com',
-        videoTime: currentTime,
-        drawing: tempDrawing,
+        user_name: user?.name || 'Anonymous',
+        user_email: user?.email || 'anonymous@example.com',
+        video_time: currentTime,
+        project_id: projectId,
+        folder_id: folderId,
+        video_id: selectedVideo.id,
+        drawing_data: tempDrawing ? JSON.stringify(tempDrawing) : null,
         parentId: comment.parentId || null
       };
 
-      console.log('Sending comment:', commentData);
+      console.log('Enviando comentário:', commentData);
 
       const response = await fetch(
         `/api/projects/${projectId}/folders/${folderId}/videos/${selectedVideo.id}/comments`,
@@ -582,6 +597,8 @@ export default function FolderContent({ projectId, folderId }) {
             <div className="w-96 bg-[#1A1B1E] rounded-lg overflow-hidden">
               <Comments
                 videoId={selectedVideo.id}
+                projectId={projectId}
+                folderId={folderId}
                 comments={comments}
                 onCommentSubmit={handleCommentSubmit}
                 user={user}

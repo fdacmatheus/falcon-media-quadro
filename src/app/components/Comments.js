@@ -28,6 +28,7 @@ const Comments = ({
   // Efeito para garantir que o botão de submit seja registrado corretamente
   useEffect(() => {
     console.log('Componente Comments montado, configurando listeners');
+    console.log('IDs disponíveis:', { projectId, folderId, videoId });
     
     // Timeout para garantir que o DOM esteja pronto
     const timeoutId = setTimeout(() => {
@@ -41,6 +42,13 @@ const Comments = ({
         const clickHandler = (e) => {
           e.preventDefault();
           console.log('Submit button clicked via event listener');
+          console.log('IDs verificados:', { projectId, folderId, videoId });
+          
+          if (!projectId || !folderId || !videoId) {
+            console.error('Faltam IDs necessários:', { projectId, folderId, videoId });
+            toast.error('Erro: IDs necessários não encontrados');
+            return;
+          }
           
           // Verificar se há texto ou desenho
           if (newComment.trim() || tempDrawing) {
@@ -78,9 +86,10 @@ const Comments = ({
 
   // Função para fazer chamada direta à API
   const makeDirectAPICall = async (comment) => {
-    console.log('Iniciando chamada direta à API', {projectId, folderId, videoId});
+    console.log('Iniciando chamada direta à API com IDs:', {projectId, folderId, videoId});
     
     if (!projectId || !folderId || !videoId) {
+      console.error('Faltam IDs necessários:', { projectId, folderId, videoId });
       throw new Error('IDs necessários não encontrados');
     }
     
@@ -150,6 +159,7 @@ const Comments = ({
     console.log('FORM SUBMIT TRIGGERED!');
     console.log('New comment text:', newComment);
     console.log('Has drawing:', !!tempDrawing);
+    console.log('IDs para envio:', { projectId, folderId, videoId });
     
     if (!newComment.trim() && !tempDrawing) {
       console.log('No comment text or drawing, returning early');
