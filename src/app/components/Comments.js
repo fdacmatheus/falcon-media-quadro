@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HeartIcon as HeartOutline } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartSolid } from '@heroicons/react/24/solid';
 import { CheckCircleIcon, PencilIcon } from '@heroicons/react/24/outline';
@@ -25,65 +25,112 @@ const Comments = ({
   const [editingComment, setEditingComment] = useState(null);
   const [editText, setEditText] = useState('');
 
+  // Efeito para garantir que o botão de submit seja registrado corretamente
+  useEffect(() => {
+    console.log('Componente Comments montado, configurando listeners');
+    
+    // Timeout para garantir que o DOM esteja pronto
+    const timeoutId = setTimeout(() => {
+      const commentForm = document.getElementById('commentForm');
+      const submitButton = document.getElementById('submitCommentButton');
+      
+      if (commentForm && submitButton) {
+        console.log('Form e botão encontrados, configurando listener direto');
+        
+        // Adicionar um evento de clique diretamente no botão
+        const clickHandler = (e) => {
+          e.preventDefault();
+          console.log('Submit button clicked via event listener');
+          
+          // Verificar se há texto ou desenho
+          if (newComment.trim() || tempDrawing) {
+            // Disparar submit manualmente
+            const submitEvent = new Event('submit', { cancelable: true, bubbles: true });
+            commentForm.dispatchEvent(submitEvent);
+          } else {
+            console.log('Sem conteúdo para enviar');
+          }
+        };
+        
+        // Remover handler anterior se existir
+        submitButton.removeEventListener('click', clickHandler);
+        // Adicionar novo handler
+        submitButton.addEventListener('click', clickHandler);
+        
+        console.log('Event listener configurado com sucesso');
+      } else {
+        console.warn('Form ou botão não encontrados no DOM');
+      }
+    }, 500);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      
+      // Limpar event listeners na desmontagem
+      const submitButton = document.getElementById('submitCommentButton');
+      if (submitButton) {
+        console.log('Removendo event listeners na desmontagem');
+        const newSubmitButton = submitButton.cloneNode(true);
+        submitButton.parentNode.replaceChild(newSubmitButton, submitButton);
+      }
+    };
+  }, [newComment, tempDrawing, projectId, folderId, videoId]);
+
   // Função para fazer chamada direta à API
   const makeDirectAPICall = async (comment) => {
-    console.log('Making direct API call for comment...');
+    console.log('Iniciando chamada direta à API', {projectId, folderId, videoId});
     
-    // Preparar dados para a API
+    if (!projectId || !folderId || !videoId) {
+      throw new Error('IDs necessários não encontrados');
+    }
+    
+    // Preparar dados para a API de forma simplificada
     const requestBody = {
       text: comment.text || '',
       user_name: user?.name || comment.author || 'Anônimo',
       user_email: user?.email || comment.email || 'anonymous@example.com',
-      video_time: comment.videoTime,
+      video_time: comment.videoTime || parseFloat(currentTime) || 0,
       parentId: comment.parentId || null,
       project_id: projectId,
       folder_id: folderId,
       video_id: videoId,
-      drawing_data: comment.drawing ? JSON.stringify(comment.drawing) : null
+      drawing_data: comment.drawing ? 
+        (typeof comment.drawing === 'string' ? comment.drawing : JSON.stringify(comment.drawing)) : null
     };
     
-    console.log('Direct API call with data:', requestBody);
+    console.log('Enviando para a API:', requestBody);
     
-    // Tentar fazer a requisição
-    const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-    
-    console.log('API response status:', response.status);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API error:', errorText);
-      throw new Error(`Falha ao salvar comentário: ${errorText}`);
+    try {
+      // Fazer chamada à API com timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Erro na chamada à API:', errorText);
+        throw new Error(`Falha ao salvar comentário: ${response.status}`);
+      }
+      
+      const savedComment = await response.json();
+      console.log('Comentário salvo com sucesso:', savedComment);
+      
+      return savedComment;
+    } catch (error) {
+      console.error('Erro na chamada à API:', error);
+      // Não fazer toast aqui para evitar duplicação
+      throw error;
     }
-    
-    const savedComment = await response.json();
-    console.log('Comment saved successfully:', savedComment);
-    
-    // Atualizar a lista de comentários na interface
-    const formattedComment = {
-      ...savedComment,
-      author: savedComment.user_name,
-      email: savedComment.user_email,
-      timestamp: savedComment.created_at,
-      videoTime: parseFloat(savedComment.video_time) || 0,
-      likes: parseInt(savedComment.likes) || 0,
-      likedBy: savedComment.liked_by ? JSON.parse(savedComment.liked_by) : [],
-      replies: [],
-      resolved: Boolean(savedComment.resolved),
-      drawing: savedComment.drawing_data ? JSON.parse(savedComment.drawing_data) : null
-    };
-    
-    if (setComments) {
-      setComments(prevComments => [formattedComment, ...prevComments]);
-    }
-    
-    toast.success('Comentário adicionado com sucesso!');
-    return formattedComment;
   };
 
   const formatVideoTime = (timeInSeconds) => {
@@ -102,7 +149,6 @@ const Comments = ({
     e.preventDefault();
     console.log('FORM SUBMIT TRIGGERED!');
     console.log('New comment text:', newComment);
-    console.log('User:', user);
     console.log('Has drawing:', !!tempDrawing);
     
     if (!newComment.trim() && !tempDrawing) {
@@ -111,71 +157,91 @@ const Comments = ({
     }
 
     try {
-      console.log('Current time when submitting comment:', currentTime);
-      console.log('Drawing data present:', !!tempDrawing);
-      
-      const comment = {
-        text: newComment,
-        author: user?.name || 'Anonymous',
-        email: user?.email || 'anonymous@example.com',
-        videoTime: parseFloat(currentTime) || 0,
+      // Enviar o comentário diretamente via fetch
+      console.log('Enviando comentário diretamente via fetch');
+
+      if (!projectId || !folderId || !videoId) {
+        console.error('Faltam IDs necessários:', { projectId, folderId, videoId });
+        toast.error('Erro: IDs necessários não encontrados');
+        return;
+      }
+
+      // Preparar dados para o backend
+      const requestBody = {
+        text: newComment.trim(),
+        user_name: user?.name || 'Anônimo',
+        user_email: user?.email || 'anonymous@example.com',
+        video_time: parseFloat(currentTime) || 0,
         parentId: null,
-        drawing: tempDrawing ? {
+        project_id: projectId,
+        folder_id: folderId,
+        video_id: videoId,
+        drawing_data: tempDrawing ? JSON.stringify({
           imageData: tempDrawing,
           timestamp: parseFloat(currentTime) || 0
-        } : null
+        }) : null
       };
 
-      console.log('Comment object prepared:', comment);
+      console.log('Request body:', requestBody);
 
-      // Primeiro, verificar se temos um handler externo para o envio
-      if (onCommentSubmit) {
-        console.log('Using onCommentSubmit handler');
-        try {
-          await onCommentSubmit(comment);
-          console.log('onCommentSubmit executed successfully');
-        } catch (submitError) {
-          console.error('Error in onCommentSubmit handler:', submitError);
-          console.log('Falling back to direct API call');
-          
-          // Se falhar, tenta fazer a chamada direta à API
-          if (projectId && folderId && videoId) {
-            await makeDirectAPICall(comment);
-          } else {
-            throw submitError; // Re-throw if we can't make a direct call
-          }
-        }
-      } else if (onNewComment) {
-        console.log('Using onNewComment handler');
-        try {
-          await onNewComment(comment);
-          console.log('onNewComment executed successfully');
-        } catch (newCommentError) {
-          console.error('Error in onNewComment handler:', newCommentError);
-          console.log('Falling back to direct API call');
-          
-          // Se falhar, tenta fazer a chamada direta à API
-          if (projectId && folderId && videoId) {
-            await makeDirectAPICall(comment);
-          } else {
-            throw newCommentError; // Re-throw if we can't make a direct call
-          }
-        }
-      } else if (projectId && folderId && videoId) {
-        // Se não temos handlers externos mas temos os IDs, fazer a requisição diretamente
-        console.log('No handler provided, making direct API call');
-        await makeDirectAPICall(comment);
-      } else {
-        console.error('No comment submission handler provided and missing required IDs');
-        toast.error('Erro ao enviar comentário: faltam parâmetros necessários');
+      // Fazer a chamada fetch diretamente
+      const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log('Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Erro na resposta do servidor:', errorText);
+        throw new Error(`Falha ao salvar comentário: ${response.status} ${errorText}`);
       }
-      
+
+      const savedComment = await response.json();
+      console.log('Comentário salvo com sucesso:', savedComment);
+
+      // Formatar o comentário para a interface
+      const formattedComment = {
+        ...savedComment,
+        id: savedComment.id,
+        author: savedComment.user_name,
+        email: savedComment.user_email,
+        timestamp: savedComment.created_at,
+        videoTime: parseFloat(savedComment.video_time) || 0,
+        likes: parseInt(savedComment.likes) || 0,
+        likedBy: savedComment.liked_by ? JSON.parse(savedComment.liked_by) : [],
+        replies: [],
+        resolved: Boolean(savedComment.resolved),
+        drawing: savedComment.drawing_data ? JSON.parse(savedComment.drawing_data) : null
+      };
+
+      // Atualizar a interface
+      setComments(prevComments => [formattedComment, ...prevComments]);
       setNewComment('');
       if (onClearDrawing) {
         onClearDrawing();
       }
+      
+      toast.success('Comentário adicionado com sucesso!');
+      
+      // Notificar os handlers apenas para manter compatibilidade
+      if (onCommentSubmit) {
+        console.log('Notificando onCommentSubmit (não esperando resultado)');
+        onCommentSubmit(formattedComment).catch(err => {
+          console.log('Erro no onCommentSubmit (ignorado):', err);
+        });
+      } else if (onNewComment) {
+        console.log('Notificando onNewComment (não esperando resultado)');
+        onNewComment(formattedComment).catch(err => {
+          console.log('Erro no onNewComment (ignorado):', err);
+        });
+      }
     } catch (error) {
-      console.error('Error saving comment:', error);
+      console.error('Erro ao salvar comentário:', error);
       toast.error('Erro ao salvar comentário: ' + error.message);
     }
   };
@@ -683,7 +749,7 @@ const Comments = ({
 
       <div className="p-4 border-b border-[#3F3F3F]">
         {!replyingTo && (
-          <form onSubmit={handleSubmit}>
+          <form id="commentForm" onSubmit={handleSubmit}>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[#D00102] font-bold">
                 {formatVideoTime(currentTime)}
@@ -714,12 +780,14 @@ const Comments = ({
               />
               <div className="flex gap-2">
                 <button
-                  type="submit"
+                  id="submitCommentButton"
+                  type="button" 
                   disabled={!newComment.trim() && !tempDrawing}
                   onClick={(e) => {
-                    // Registrar o clique explicitamente
-                    console.log('Submit button clicked');
-                    // O form onSubmit já irá chamar handleSubmit, este log é apenas para depuração
+                    e.preventDefault();
+                    console.log('Submit button clicked directly');
+                    // Chamar diretamente o handleSubmit
+                    handleSubmit(new Event('submit'));
                   }}
                   className={`flex-1 bg-[#D00102] text-white px-4 py-2 rounded-lg transition-colors ${
                     !newComment.trim() && !tempDrawing 
