@@ -44,68 +44,28 @@ function VideoPlayerPageContent() {
   // Carregar dados do vídeo e versões
   useEffect(() => {
     const loadVideoData = async () => {
-      if (!videoId) return;
-      
-      try {
-        // Se não temos projectId ou folderId, vamos tentar obter do endpoint de info
-        if (!projectId || !folderId) {
-          console.log('Tentando obter projectId e folderId do endpoint de info');
-          try {
-            const infoResponse = await fetch(`/api/videos/${videoId}/info`);
-            if (infoResponse.ok) {
-              const videoInfo = await infoResponse.json();
-              if (videoInfo.project_id && videoInfo.folder_id) {
-                console.log('IDs obtidos do endpoint de info:', { 
-                  projectId: videoInfo.project_id, 
-                  folderId: videoInfo.folder_id 
-                });
-                
-                // Agora podemos carregar os dados com os IDs corretos
-                await loadVideoWithIds(videoInfo.project_id, videoInfo.folder_id, videoId);
-                return;
-              }
-            }
-          } catch (infoError) {
-            console.error('Erro ao buscar info do vídeo:', infoError);
-          }
-        }
-        
-        // Se chegamos aqui, usamos os IDs da URL
-        await loadVideoWithIds(projectId, folderId, videoId);
-      } catch (error) {
-        console.error('Erro ao carregar dados do vídeo:', error);
-        toast.error('Erro ao carregar dados do vídeo');
-      }
-    };
-    
-    const loadVideoWithIds = async (projId, foldId, vidId) => {
+      if (!projectId || !folderId || !videoId) return;
+
       try {
         // Buscar dados do vídeo
-        const response = await fetch(`/api/projects/${projId}/folders/${foldId}/videos/${vidId}`);
+        const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}`);
         if (response.ok) {
-          const vidData = await response.json();
-          setVideoData(vidData);
-          setCurrentVideoUrl(vidData.file_path);
+          const videoData = await response.json();
+          setVideoData(videoData);
+          setCurrentVideoUrl(videoData.file_path);
         } else {
           toast.error('Erro ao carregar vídeo');
         }
 
         // Buscar versões do vídeo
-        const versionsResponse = await fetch(`/api/projects/${projId}/folders/${foldId}/videos/${vidId}/versions`);
+        const versionsResponse = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/versions`);
         if (versionsResponse.ok) {
           const versionsData = await versionsResponse.json();
           setVideoVersions(versionsData);
         }
-        
-        // Buscar comentários
-        const commentsResponse = await fetch(`/api/projects/${projId}/folders/${foldId}/videos/${vidId}/comments`);
-        if (commentsResponse.ok) {
-          const commentsData = await commentsResponse.json();
-          setComments(commentsData);
-        }
       } catch (error) {
-        console.error('Erro ao carregar dados com IDs:', error);
-        throw error;
+        console.error('Erro ao carregar dados do vídeo:', error);
+        toast.error('Erro ao carregar dados do vídeo');
       }
     };
 
