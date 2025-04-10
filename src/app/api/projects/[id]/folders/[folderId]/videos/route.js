@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { DbService } from '@/services';
+import { DbService } from '../../../../../../services';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';

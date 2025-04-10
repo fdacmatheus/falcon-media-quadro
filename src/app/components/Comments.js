@@ -160,9 +160,52 @@ const Comments = ({
       // Enviar o comentário diretamente via fetch
       console.log('Enviando comentário diretamente via fetch');
 
-      if (!projectId || !folderId || !videoId) {
-        console.error('Faltam IDs necessários:', { projectId, folderId, videoId });
-        toast.error('Erro: IDs necessários não encontrados');
+      // Verificar se temos pelo menos o videoId
+      if (!videoId) {
+        console.error('ID do vídeo não encontrado');
+        toast.error('Erro: ID do vídeo não encontrado');
+        return;
+      }
+
+      // Se projectId ou folderId não estiverem disponíveis, vamos obtê-los do vídeo
+      let actualProjectId = projectId;
+      let actualFolderId = folderId;
+
+      // Se não temos projectId ou folderId, mas temos videoId, vamos buscar os IDs do vídeo
+      if ((!actualProjectId || !actualFolderId) && videoId) {
+        console.log('Obtendo projectId e folderId a partir do videoId:', videoId);
+        try {
+          // Buscar os dados do vídeo para obter projectId e folderId
+          const response = await fetch(`/api/videos/${videoId}/info`);
+          if (response.ok) {
+            const videoInfo = await response.json();
+            actualProjectId = videoInfo.project_id;
+            actualFolderId = videoInfo.folder_id;
+            console.log('IDs obtidos do vídeo:', { actualProjectId, actualFolderId });
+          } else {
+            // Se não conseguirmos obter os IDs, usamos os do primeiro comentário existente
+            if (comments && comments.length > 0) {
+              actualProjectId = comments[0].project_id;
+              actualFolderId = comments[0].folder_id;
+              console.log('IDs obtidos do primeiro comentário:', { actualProjectId, actualFolderId });
+            } else {
+              // Se tudo falhar, extraímos do URL
+              const url = window.location.href;
+              const urlParams = new URLSearchParams(window.location.search);
+              actualProjectId = urlParams.get('projectId');
+              actualFolderId = urlParams.get('folderId');
+              console.log('IDs obtidos da URL:', { actualProjectId, actualFolderId });
+            }
+          }
+        } catch (error) {
+          console.error('Erro ao buscar IDs do vídeo:', error);
+        }
+      }
+
+      // Verificar se temos os IDs necessários
+      if (!actualProjectId || !actualFolderId) {
+        console.error('Faltam IDs necessários:', { actualProjectId, actualFolderId, videoId });
+        toast.error('Erro: IDs de projeto e pasta não encontrados');
         return;
       }
 
@@ -173,8 +216,8 @@ const Comments = ({
         user_email: user?.email || 'anonymous@example.com',
         video_time: parseFloat(currentTime) || 0,
         parentId: null,
-        project_id: projectId,
-        folder_id: folderId,
+        project_id: actualProjectId,
+        folder_id: actualFolderId,
         video_id: videoId,
         drawing_data: tempDrawing ? JSON.stringify({
           imageData: tempDrawing,
@@ -185,7 +228,7 @@ const Comments = ({
       console.log('Request body:', requestBody);
 
       // Fazer a chamada fetch diretamente
-      const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
+      const response = await fetch(`/api/projects/${actualProjectId}/folders/${actualFolderId}/videos/${videoId}/comments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { DbService } from '@/services';
+import { DbService } from '../../../../services';
 
 // GET /api/projects/[id]/folders
 export async function GET(request, { params }) {

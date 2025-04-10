@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { VideoService, DbService } from '@/services';
+import { VideoService } from '../../../../../../../services/videoService';
+import { DbService } from '../../../../../../../services';
 import { unlink } from 'fs/promises';
 import { join } from 'path';
 import fs from 'fs';
