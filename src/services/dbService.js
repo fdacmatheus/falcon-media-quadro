@@ -308,44 +308,59 @@ export class DbService {
   // Comentários
   static async createComment(projectId, folderId, videoId, parentId, userName, userEmail, text, videoTime, drawingData) {
     try {
+      console.log('Criando comentário:', {
+        projectId,
+        folderId,
+        videoId,
+        parentId,
+        userName,
+        userEmail,
+        text,
+        videoTime,
+        hasDrawing: !!drawingData
+      });
+
       const id = uuidv4();
       const now = new Date().toISOString();
 
       // Se for uma resposta (reply), buscar o comentário pai para validação
       if (parentId) {
+        console.log('Buscando comentário pai:', parentId);
         const parentComment = await this.getComment(parentId);
         if (!parentComment) {
+          console.error('Comentário pai não encontrado:', parentId);
           throw new Error('Comentário pai não encontrado');
         }
         // Usar os IDs do comentário pai para garantir consistência
         projectId = parentComment.project_id;
         folderId = parentComment.folder_id;
         videoId = parentComment.video_id;
+        console.log('Usando IDs do comentário pai:', { projectId, folderId, videoId });
       }
 
-      // Processar os dados de desenho, que podem estar no formato novo (com timestamp)
-      // ou antigo (apenas a string de dados da imagem)
+      // Processar os dados de desenho
       let processedDrawingData = drawingData;
       
-      // Se tivermos dados de desenho e for uma string, verificar se é um JSON válido
       if (typeof drawingData === 'string') {
         try {
           // Tenta fazer parse para ver se já é um JSON
           const parsed = JSON.parse(drawingData);
-          processedDrawingData = drawingData; // Já é um JSON string, manter como está
+          processedDrawingData = drawingData;
+          console.log('Drawing data já é um JSON válido');
         } catch (e) {
-          // Se não for um JSON válido, é provavelmente o formato antigo (apenas imagem)
-          // Criar um objeto com formato novo
+          // Se não for um JSON válido, é provavelmente o formato antigo
+          console.log('Convertendo drawing data para novo formato');
           processedDrawingData = JSON.stringify({
             imageData: drawingData,
             timestamp: videoTime
           });
         }
       } else if (drawingData && typeof drawingData === 'object') {
-        // Se já for um objeto, converter para JSON string
+        console.log('Convertendo objeto drawing para JSON string');
         processedDrawingData = JSON.stringify(drawingData);
       }
 
+      console.log('Inserindo comentário no banco');
       await query(
         `INSERT INTO comments (
           id, project_id, folder_id, video_id, parent_id,
@@ -363,15 +378,21 @@ export class DbService {
           text,
           videoTime,
           processedDrawingData,
-          0, // likes
-          '[]', // liked_by
-          0, // resolved
+          0,
+          '[]',
+          0,
           now,
           now
         ]
       );
 
+      console.log('Buscando comentário criado');
       const result = await query('SELECT * FROM comments WHERE id = ?', [id]);
+      if (!result.rows[0]) {
+        throw new Error('Comentário não foi criado corretamente');
+      }
+      
+      console.log('Comentário criado com sucesso:', result.rows[0]);
       return result.rows[0];
     } catch (error) {
       console.error('Erro ao criar comentário:', error);
@@ -381,11 +402,15 @@ export class DbService {
 
   static async getComments(projectId, folderId, videoId) {
     try {
+      console.log('Buscando comentários:', { projectId, folderId, videoId });
+      
       // Buscar todos os comentários do vídeo
       const result = await query(
         'SELECT * FROM comments WHERE project_id = ? AND folder_id = ? AND video_id = ? ORDER BY created_at ASC',
         [projectId, folderId, videoId]
       );
+
+      console.log('Total de comentários encontrados:', result.rows.length);
 
       // Organizar comentários em uma estrutura hierárquica
       const comments = result.rows;
@@ -404,12 +429,16 @@ export class DbService {
           const parentComment = commentMap.get(comment.parent_id);
           if (parentComment) {
             parentComment.replies.push(comment);
+          } else {
+            console.warn('Comentário pai não encontrado:', comment.parent_id);
+            rootComments.push(comment);
           }
         } else {
           rootComments.push(comment);
         }
       });
 
+      console.log('Comentários organizados hierarquicamente');
       return rootComments;
     } catch (error) {
       console.error('Erro ao buscar comentários:', error);
