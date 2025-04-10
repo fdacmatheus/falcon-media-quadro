@@ -1,11 +1,12 @@
 'use client';
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import VideoPlayer from '../components/VideoPlayer';
 import Comments from '../components/Comments';
 import { useSearchParams } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 
-export default function VideoPlayerPage() {
+// Componente principal dentro do Suspense
+function VideoPlayerPageContent() {
   const searchParams = useSearchParams();
   const [user, setUser] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -187,5 +188,14 @@ export default function VideoPlayerPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// Componente principal com Suspense
+export default function VideoPlayerPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">Carregando...</div>}>
+      <VideoPlayerPageContent />
+    </Suspense>
   );
 } 

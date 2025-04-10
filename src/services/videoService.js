@@ -1,8 +1,8 @@
-const { v4: uuidv4 } = require('uuid');
-const fs = require('fs');
-const path = require('path');
-const { writeFile } = require('fs/promises');
-const DbService = require('./dbService');
+import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+import path from 'path';
+import { writeFile } from 'fs/promises';
+import { DbService } from './dbService';
 
 // Diretório para armazenar os vídeos
 const VIDEOS_DIR = path.join(process.cwd(), 'public', 'uploads', 'videos');
@@ -12,7 +12,7 @@ if (!fs.existsSync(VIDEOS_DIR)) {
   fs.mkdirSync(VIDEOS_DIR, { recursive: true });
 }
 
-class VideoService {
+export class VideoService {
   static async getVideos(projectId, folderId) {
     return await DbService.getVideos(projectId, folderId);
   }
@@ -160,6 +160,4 @@ class VideoService {
   static async toggleCommentLike(projectId, folderId, videoId, commentId, userEmail) {
     return await DbService.toggleCommentLike(commentId, userEmail);
   }
-}
-
-module.exports = VideoService; 
+} 

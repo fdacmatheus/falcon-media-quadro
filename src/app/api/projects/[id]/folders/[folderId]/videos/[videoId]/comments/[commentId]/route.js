@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { DbService } from '../../../../../../../../services/dbService';
+import { DbService } from '@/services';
 
 export async function DELETE(request, { params }) {
   try {
