@@ -97,65 +97,92 @@ function VideoPlayerPageContent() {
   };
 
   const handleNewComment = async (comment) => {
+    console.log('handleNewComment called with:', comment);
+    console.log('ProjectId:', projectId);
+    console.log('FolderId:', folderId);
+    console.log('VideoId:', videoId);
+    
     if (!projectId || !folderId || !videoId) {
-      console.error('IDs ausentes:', { projectId, folderId, videoId });
+      console.error('Missing required IDs for comment submission!');
+      toast.error('Erro: IDs necessários não encontrados');
       return;
     }
 
     try {
-      console.log('handleNewComment - Comentário recebido:', comment);
+      console.log('Preparing to send fetch request to:', `/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`);
       
-      const commentData = {
-        text: comment.text,
-        user_name: user?.name || 'Usuário',
-        user_email: comment.email || user?.email || 'default@email.com',
+      // Mapear campos para corresponder ao que o backend espera
+      const requestBody = {
+        text: comment.text || '',
+        user_name: user?.name || comment.author || 'Usuário',
+        user_email: user?.email || comment.email || 'default@email.com',
         video_time: comment.videoTime,
+        parentId: comment.parentId || null,
         project_id: projectId,
         folder_id: folderId,
         video_id: videoId,
         drawing_data: comment.drawing ? JSON.stringify(comment.drawing) : null
       };
       
-      console.log('handleNewComment - Dados formatados para API:', commentData);
-      console.log('handleNewComment - URL da requisição:', `/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`);
-
-      const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(commentData),
-      });
-
-      console.log('handleNewComment - Status da resposta:', response.status);
+      console.log('Request body:', requestBody);
       
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('handleNewComment - Erro na resposta:', errorData);
-        throw new Error(`Falha ao salvar comentário: ${response.status} ${errorData.error || ''}`);
+      // Tentar fazer a requisição com um timeout para garantir que não fique preso
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      
+      try {
+        const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Server response error:', errorText);
+          throw new Error(`Falha ao salvar comentário: ${response.status} ${errorText}`);
+        }
+
+        const savedComment = await response.json();
+        console.log('Saved comment from server:', savedComment);
+        
+        // Atualizar a interface com o novo comentário
+        const formattedComment = {
+          ...savedComment,
+          id: savedComment.id,
+          author: savedComment.user_name,
+          email: savedComment.user_email,
+          timestamp: savedComment.created_at,
+          videoTime: parseFloat(savedComment.video_time) || 0,
+          likes: parseInt(savedComment.likes) || 0,
+          likedBy: savedComment.liked_by ? JSON.parse(savedComment.liked_by) : [],
+          replies: [],
+          resolved: Boolean(savedComment.resolved),
+          drawing: savedComment.drawing_data ? JSON.parse(savedComment.drawing_data) : null
+        };
+
+        console.log('Formatted comment:', formattedComment);
+        setComments(prevComments => [formattedComment, ...prevComments]);
+        setTempDrawing(null);
+        toast.success('Comentário enviado com sucesso!');
+      } catch (fetchError) {
+        if (fetchError.name === 'AbortError') {
+          console.error('Fetch request timed out');
+          toast.error('Tempo limite excedido ao enviar comentário. Verifique sua conexão.');
+        } else {
+          throw fetchError;
+        }
       }
-
-      const savedComment = await response.json();
-      console.log('handleNewComment - Comentário salvo com sucesso:', savedComment);
-
-      const formattedComment = {
-        ...savedComment,
-        author: savedComment.user_name,
-        email: savedComment.user_email,
-        timestamp: savedComment.created_at,
-        videoTime: parseFloat(savedComment.video_time) || 0,
-        likes: parseInt(savedComment.likes) || 0,
-        likedBy: savedComment.liked_by ? JSON.parse(savedComment.liked_by) : [],
-        replies: [],
-        resolved: Boolean(savedComment.resolved),
-        drawing: savedComment.drawing_data ? JSON.parse(savedComment.drawing_data) : null
-      };
-
-      setComments(prevComments => [formattedComment, ...prevComments]);
-      setTempDrawing(null);
     } catch (error) {
       console.error('Erro ao salvar comentário:', error);
-      toast.error(`Erro ao salvar comentário: ${error.message}`);
+      toast.error('Erro ao salvar comentário: ' + error.message);
     }
   };
 
@@ -199,8 +226,6 @@ function VideoPlayerPageContent() {
               tempDrawing={tempDrawing}
               onClearDrawing={() => setTempDrawing(null)}
               videoId={videoId}
-              projectId={projectId}
-              folderId={folderId}
             />
           </div>
         )}

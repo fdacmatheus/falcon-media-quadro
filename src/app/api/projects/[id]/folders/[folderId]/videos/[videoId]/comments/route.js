@@ -32,30 +32,30 @@ export async function GET(request, { params }) {
 }
 
 export async function POST(request, { params }) {
+  console.log('API: POST /comments - Início da solicitação');
   try {
     const paramsData = await params;
     const projectId = paramsData.id;
     const folderId = paramsData.folderId;
     const videoId = paramsData.videoId;
     
-    console.log('POST /comments - Raw params:', paramsData);
-    console.log('POST /comments - Parâmetros extraídos:', { projectId, folderId, videoId });
+    console.log('API: POST /comments - Parâmetros de URL:', { projectId, folderId, videoId });
     
     let data;
     try {
       data = await request.json();
-      console.log('POST /comments - Dados recebidos (JSON):', data);
-    } catch (e) {
-      console.error('Erro ao parsear o corpo da requisição:', e);
+      console.log('API: POST /comments - Dados do corpo da requisição:', data);
+    } catch (parseError) {
+      console.error('API: Erro ao analisar JSON do corpo da requisição:', parseError);
       return NextResponse.json({
-        error: 'Erro no formato dos dados',
-        details: e.message
+        error: 'Erro ao analisar corpo da requisição',
+        details: parseError.message
       }, { status: 400 });
     }
 
     // Validate required data
     if (!projectId || !folderId || !videoId) {
-      console.error('Parâmetros inválidos:', { projectId, folderId, videoId });
+      console.error('API: Parâmetros de URL inválidos:', { projectId, folderId, videoId });
       return NextResponse.json({
         error: 'Parâmetros inválidos',
         details: 'Todos os parâmetros são obrigatórios'
@@ -63,25 +63,15 @@ export async function POST(request, { params }) {
     }
 
     if (!data.text && !data.drawing_data) {
-      console.error('Dados do comentário inválidos:', data);
+      console.error('API: Dados do comentário inválidos:', data);
       return NextResponse.json({
         error: 'Dados inválidos',
         details: 'O comentário deve ter texto ou um desenho'
       }, { status: 400 });
     }
 
-    console.log('Chamando DbService.createComment com:', {
-      projectId,
-      folderId, 
-      videoId,
-      parentId: data.parentId,
-      userName: data.user_name,
-      userEmail: data.user_email,
-      text: data.text,
-      videoTime: data.video_time,
-      drawingData: data.drawing_data ? 'present' : null
-    });
-
+    console.log('API: Tentando criar comentário com DbService');
+    
     // Create the comment
     try {
       const savedComment = await DbService.createComment(
@@ -96,17 +86,17 @@ export async function POST(request, { params }) {
         data.drawing_data
       );
 
-      console.log('POST /comments - Comentário salvo:', savedComment);
+      console.log('API: POST /comments - Comentário salvo com sucesso:', savedComment);
       return NextResponse.json(savedComment);
     } catch (dbError) {
-      console.error('Erro do DbService ao criar comentário:', dbError);
+      console.error('API: Erro ao salvar comentário no banco de dados:', dbError);
       return NextResponse.json({
-        error: 'Erro do banco de dados',
+        error: 'Erro ao salvar comentário no banco de dados',
         details: dbError.message
       }, { status: 500 });
     }
   } catch (error) {
-    console.error('Erro geral ao salvar comentário:', error);
+    console.error('API: Erro geral ao processar solicitação POST /comments:', error);
     return NextResponse.json({
       error: 'Erro ao salvar comentário',
       details: error.message
