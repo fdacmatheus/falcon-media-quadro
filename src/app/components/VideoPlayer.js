@@ -91,12 +91,24 @@ const VideoPlayer = forwardRef(({
   }, [initialTime, initialIsPlaying]);
 
   useEffect(() => {
-    const markers = comments.map(comment => ({
-      id: comment.id,
-      time: comment.videoTime,
-      author: comment.author || comment.user_name,
-      text: comment.text
-    }));
+    const markers = comments.map(comment => {
+      // Converter e validar o valor de tempo do comentário
+      let videoTime = parseFloat(comment.videoTime || comment.video_time || 0);
+      
+      // Verificar se é um número válido e finito
+      if (isNaN(videoTime) || !isFinite(videoTime)) {
+        console.warn(`Tempo inválido detectado para o comentário ${comment.id}:`, 
+          comment.videoTime || comment.video_time);
+        videoTime = 0; // Usar 0 como fallback para valores inválidos
+      }
+      
+      return {
+        id: comment.id,
+        time: videoTime,
+        author: comment.author || comment.user_name,
+        text: comment.text
+      };
+    });
     setCommentMarkers(markers);
   }, [comments]);
 
@@ -121,29 +133,113 @@ const VideoPlayer = forwardRef(({
   useEffect(() => {
     // Extract drawings from comments
     if (comments && comments.length > 0) {
-      const drawings = comments
-        .filter(comment => comment.drawing || comment.drawing_data)
-        .map(comment => {
-          // Handle both client and server format
-          const drawing = comment.drawing || 
-            (comment.drawing_data ? JSON.parse(comment.drawing_data) : null);
-
-          if (!drawing) return null;
-          
-          // Handle both new format (with imageData) and old format (direct string)
-          const imageData = drawing.imageData || drawing;
-          const timestamp = drawing.timestamp || comment.videoTime || comment.video_time || 0;
-          
-          return {
-            id: comment.id,
-            imageData,
-            timestamp: parseFloat(timestamp) || 0
-          };
-        })
-        .filter(Boolean);
-      
-      console.log('Extracted drawings from comments:', drawings.length);
-      setCommentDrawings(drawings);
+      console.log('Processando desenhos de comentários, total:', comments.length);
+      try {
+        const drawings = comments
+          .filter(comment => {
+            // Log para debug de cada comentário com desenho
+            if (comment.drawing || comment.drawing_data) {
+              console.log('Comentário com desenho encontrado:', { 
+                id: comment.id, 
+                hasDrawing: !!comment.drawing,
+                hasDrawingData: !!comment.drawing_data,
+                videoTime: comment.videoTime || comment.video_time
+              });
+            }
+            return comment.drawing || comment.drawing_data;
+          })
+          .map(comment => {
+            // Handle different formats
+            let drawing = null;
+            
+            // Primeiro tentar usar o campo drawing se existir
+            if (comment.drawing) {
+              // Se drawing for string, tentar parse
+              if (typeof comment.drawing === 'string') {
+                try {
+                  drawing = JSON.parse(comment.drawing);
+                  console.log('Drawing parseado com sucesso de string JSON');
+                } catch (e) {
+                  // Se falhar, usar como uma string direta
+                  drawing = { imageData: comment.drawing };
+                  console.log('Drawing como string direta');
+                }
+              } else {
+                // Já é um objeto
+                drawing = comment.drawing;
+                console.log('Drawing já é um objeto');
+              }
+            } 
+            // Se não tiver drawing, usar drawing_data
+            else if (comment.drawing_data) {
+              // Se for string, tentar parse
+              if (typeof comment.drawing_data === 'string') {
+                try {
+                  drawing = JSON.parse(comment.drawing_data);
+                  console.log('Drawing_data parseado com sucesso');
+                } catch (e) {
+                  // Se falhar, usar como uma string direta
+                  drawing = { imageData: comment.drawing_data };
+                  console.log('Drawing como string direta');
+                }
+              } else if (typeof comment.drawing_data === 'object') {
+                drawing = comment.drawing_data;
+                console.log('Drawing_data já é um objeto');
+              }
+            }
+            
+            if (!drawing) {
+              console.log('Nenhum desenho válido encontrado para o comentário:', comment.id);
+              return null;
+            }
+            
+            // Garantir que temos imageData para renderizar
+            let imageData = drawing.imageData || drawing;
+            if (typeof imageData === 'object' && imageData !== null) {
+              // Se imageData for um objeto e não uma string, usar o primeiro valor não nulo
+              // Isso trata o caso em que temos um objeto aninhado
+              imageData = Object.values(imageData).find(v => v !== null && v !== undefined) || '';
+              console.log('Extraiu imageData de objeto complexo');
+            }
+            
+            // Garantir que timestamp seja um número válido
+            let timestamp = 0;
+            try {
+              timestamp = parseFloat(drawing.timestamp || comment.videoTime || comment.video_time || 0);
+              if (isNaN(timestamp) || !isFinite(timestamp)) {
+                console.warn(`Timestamp inválido para o desenho do comentário ${comment.id}, usando 0`);
+                timestamp = 0;
+              }
+            } catch (e) {
+              console.error('Erro ao processar timestamp do desenho:', e);
+              timestamp = 0;
+            }
+            
+            console.log(`Desenho processado para comentário ${comment.id}:`, { 
+              dataLength: typeof imageData === 'string' ? imageData.length : 'não é string',
+              timestamp 
+            });
+            
+            if (!imageData || typeof imageData !== 'string' || imageData.length < 10) {
+              console.log('Dados de imagem inválidos para o desenho');
+              return null;
+            }
+            
+            return {
+              id: comment.id,
+              imageData: imageData,
+              timestamp: timestamp
+            };
+          })
+          .filter(Boolean);
+        
+        console.log('Extracted drawings from comments:', drawings.length);
+        setCommentDrawings(drawings);
+      } catch (error) {
+        console.error('Erro ao processar desenhos de comentários:', error);
+      }
+    } else {
+      console.log('Nenhum comentário com desenho encontrado');
     }
   }, [comments]);
 
@@ -226,24 +322,34 @@ const VideoPlayer = forwardRef(({
     
     // Check if we should show a drawing based on timestamp
     if (commentDrawings.length > 0) {
-      // Define um limiar para considerar estar "no mesmo timestamp"
-      // Menor valor para tornar mais preciso (0.5 segundos)
-      const THRESHOLD = 0.5;
-      
-      // Encontrar desenhos relevantes para o timestamp atual
-      const relevantDrawing = commentDrawings.find(
-        drawing => Math.abs(drawing.timestamp - time) < THRESHOLD
-      );
-      
-      if (relevantDrawing) {
-        if (visibleDrawing !== relevantDrawing.imageData) {
-          console.log('Showing drawing at timestamp:', relevantDrawing.timestamp);
-          setVisibleDrawing(relevantDrawing.imageData);
+      try {
+        // Define um limiar para considerar estar "no mesmo timestamp"
+        // Maior valor para ser mais tolerante (1 segundo)
+        const THRESHOLD = 1.0;
+        
+        // Garantir que estamos comparando com números válidos
+        const validDrawings = commentDrawings.filter(drawing => {
+          const timestamp = parseFloat(drawing.timestamp);
+          return !isNaN(timestamp) && isFinite(timestamp);
+        });
+        
+        // Encontrar desenhos relevantes para o timestamp atual
+        const relevantDrawing = validDrawings.find(
+          drawing => Math.abs(parseFloat(drawing.timestamp) - time) < THRESHOLD
+        );
+        
+        if (relevantDrawing) {
+          if (visibleDrawing !== relevantDrawing.imageData) {
+            console.log('Showing drawing at timestamp:', relevantDrawing.timestamp, 'current time:', time);
+            setVisibleDrawing(relevantDrawing.imageData);
+          }
+        } else if (visibleDrawing && !isDrawing) {
+          // Esconder o desenho quando estamos fora do intervalo de tempo
+          console.log('Hiding drawing - out of timestamp range, current time:', time);
+          setVisibleDrawing(null);
         }
-      } else if (visibleDrawing && !isDrawing) {
-        // Esconder o desenho quando estamos fora do intervalo de tempo
-        console.log('Hiding drawing - out of timestamp range');
-        setVisibleDrawing(null);
+      } catch (error) {
+        console.error('Erro ao verificar desenhos no timestamp:', error);
       }
     }
   };
@@ -316,12 +422,32 @@ const VideoPlayer = forwardRef(({
   };
   
   const handleDrawingSave = (imageData) => {
-    console.log('Drawing saved, setting in state');
-    setTempDrawing(imageData);
-    setIsDrawing(false);
-    if (onDrawingSave) {
-      onDrawingSave(imageData);
+    console.log('Drawing saved in VideoPlayer, data length:', imageData ? imageData.length : 0);
+    
+    // Verificar se temos dados válidos
+    const isValidData = imageData && typeof imageData === 'string' && imageData.length > 0;
+    
+    if (isValidData) {
+      console.log('Setting valid temp drawing data');
+      setTempDrawing(imageData);
+      
+      // Notificar o componente pai
+      if (onDrawingSave) {
+        console.log('Notifying parent component about drawing');
+        onDrawingSave(imageData);
+      }
+    } else {
+      console.log('Invalid drawing data received, using fallback');
+      // Usar um valor fallback para garantir que temos sempre algo
+      const fallbackData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+      setTempDrawing(fallbackData);
+      
+      if (onDrawingSave) {
+        onDrawingSave(fallbackData);
+      }
     }
+    
+    setIsDrawing(false);
   };
   
   const handleDrawingCancel = () => {
@@ -609,7 +735,13 @@ const VideoPlayer = forwardRef(({
                     onLeave={() => {}}
                     onClick={() => {
                       if (videoRef.current) {
-                        videoRef.current.currentTime = marker.time;
+                        // Garantir que o tempo é válido antes de atribuir
+                        const safeTime = parseFloat(marker.time);
+                        if (!isNaN(safeTime) && isFinite(safeTime)) {
+                          videoRef.current.currentTime = safeTime;
+                        } else {
+                          console.warn("Tempo inválido no marcador:", marker);
+                        }
                       }
                     }}
                   />

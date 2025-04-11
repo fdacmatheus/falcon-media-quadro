@@ -95,12 +95,45 @@ const VideoDrawingOverlay = ({ videoRef, isDrawing, onSave, onCancel }) => {
 
   const handleSave = () => {
     if (!canvasRef.current) return;
+    
     try {
-      const imageData = canvasRef.current.toDataURL('image/png');
-      console.log('Drawing saved, data URL length:', imageData.length);
-      onSave(imageData);
+      console.log('Salvando desenho do canvas');
+      const canvas = canvasRef.current;
+      
+      // Verificar se o canvas está vazio
+      const isCanvasEmpty = isCanvasBlank(canvas);
+      if (isCanvasEmpty) {
+        console.log('Canvas está vazio, nada para salvar');
+        if (onSave) onSave('empty_drawing');
+        return;
+      }
+      
+      // Obter dados da imagem como URL data
+      const imageData = canvas.toDataURL('image/png');
+      console.log('Dados da imagem gerados, comprimento:', imageData.length);
+      
+      if (onSave) {
+        console.log('Chamando callback onSave');
+        onSave(imageData);
+      }
     } catch (error) {
-      console.error('Error saving drawing:', error);
+      console.error('Erro ao salvar desenho:', error);
+      // Mesmo em caso de erro, tentar passar algo para o callback
+      if (onSave) onSave('error_drawing');
+    }
+  };
+
+  // Função para verificar se o canvas está vazio
+  const isCanvasBlank = (canvas) => {
+    try {
+      const context = canvas.getContext('2d');
+      const pixelBuffer = new Uint32Array(
+        context.getImageData(0, 0, canvas.width, canvas.height).data.buffer
+      );
+      return !pixelBuffer.some(color => color !== 0);
+    } catch (e) {
+      console.error('Erro ao verificar canvas vazio:', e);
+      return false;
     }
   };
 

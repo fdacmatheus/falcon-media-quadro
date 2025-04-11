@@ -24,22 +24,87 @@ function VideoPlayerPageContent() {
 
   // Carregar comentários iniciais
   useEffect(() => {
-    const loadComments = async () => {
-      if (!projectId || !folderId || !videoId) return;
-
+    const fetchComments = async () => {
+      if (!videoId || !projectId || !folderId) return;
+      
+      console.log('Buscando comentários para vídeo:', videoId);
       try {
-        const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`);
-        if (response.ok) {
-          const data = await response.json();
-          setComments(data);
+        const response = await fetch(
+          `/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`
+        );
+        
+        if (!response.ok) {
+          throw new Error('Falha ao buscar comentários');
         }
+        
+        const fetchedComments = await response.json();
+        console.log(`Foram carregados ${fetchedComments.length} comentários`);
+        
+        // Processar os comentários para garantir compatibilidade
+        const processedComments = fetchedComments.map(comment => {
+          console.log('Processando comentário com ID:', comment.id);
+          
+          // Verificar se temos dados de desenho e processá-los
+          let drawingData = null;
+          
+          if (comment.drawing_data) {
+            try {
+              // Tentar fazer parse do JSON
+              const drawingObj = JSON.parse(comment.drawing_data);
+              console.log('Drawing data parseado com sucesso');
+              
+              // Armazenar no objeto 'drawing' para compatibilidade
+              drawingData = drawingObj;
+            } catch (e) {
+              console.error('Erro ao processar drawing_data:', e);
+              // Talvez seja uma string direta
+              if (typeof comment.drawing_data === 'string' && comment.drawing_data.startsWith('data:')) {
+                drawingData = {
+                  imageData: comment.drawing_data,
+                  timestamp: parseFloat(comment.video_time || 0)
+                };
+              }
+            }
+          }
+          
+          // Garantir que temos videoTime como número
+          const videoTime = parseFloat(comment.video_time || comment.videoTime || 0);
+          
+          // Log para debug
+          console.log(`Comentário ${comment.id}:`, {
+            videoTime,
+            hasDrawing: !!drawingData,
+            drawingTimestamp: drawingData?.timestamp
+          });
+          
+          return {
+            ...comment,
+            videoTime,
+            drawing: drawingData,
+            // Outros campos para garantir compatibilidade
+            author: comment.user_name || comment.author || 'Anônimo',
+            timestamp: comment.created_at || comment.timestamp,
+            likes: parseInt(comment.likes) || 0,
+            likedBy: comment.liked_by ? 
+              (typeof comment.liked_by === 'string' ? JSON.parse(comment.liked_by) : comment.liked_by) : 
+              (comment.likedBy || []),
+            replies: comment.replies || [],
+            resolved: Boolean(comment.resolved)
+          };
+        });
+        
+        console.log('Comentários processados com sucesso');
+        setComments(processedComments);
       } catch (error) {
-        console.error('Erro ao carregar comentários:', error);
+        console.error('Erro ao buscar comentários:', error);
+        toast.error('Erro ao carregar comentários');
       }
     };
-
-    loadComments();
-  }, [projectId, folderId, videoId]);
+    
+    if (videoId) {
+      fetchComments();
+    }
+  }, [videoId, projectId, folderId]);
 
   // Carregar dados do vídeo e versões
   useEffect(() => {
@@ -72,6 +137,12 @@ function VideoPlayerPageContent() {
     loadVideoData();
   }, [projectId, folderId, videoId]);
 
+  useEffect(() => {
+    // Log para verificar se o tempDrawing está sendo atualizado
+    console.log('videoPlayer page tempDrawing state:', 
+      tempDrawing ? `Present (length: ${tempDrawing.length})` : 'Not present');
+  }, [tempDrawing]);
+
   const handleLogin = (userData) => {
     setUser(userData);
   };
@@ -87,7 +158,19 @@ function VideoPlayerPageContent() {
   }, []);
 
   const handleDrawingSave = (imageData) => {
-    setTempDrawing(imageData);
+    console.log('Drawing saved in VideoPlayerPage, data received:', 
+      imageData ? `Present (length: ${imageData.length})` : 'Not present');
+    
+    // Garantir que temos dados válidos
+    if (typeof imageData === 'string' && imageData.length > 0) {
+      console.log('Setting valid tempDrawing in VideoPlayerPage');
+      setTempDrawing(imageData);
+    } else {
+      console.warn('Invalid drawing data received in VideoPlayerPage');
+      // Definir um valor fallback válido
+      const fallbackDrawing = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+      setTempDrawing(fallbackDrawing);
+    }
   };
 
   const handleVersionCreated = (newVersion) => {
@@ -98,6 +181,18 @@ function VideoPlayerPageContent() {
 
   const handleNewComment = async (comment) => {
     console.log('handleNewComment called with:', comment);
+    
+    // Esta função está sendo chamada pelo componente Comments, mas devemos evitar
+    // duplicação. Vamos manter essa função apenas para manter compatibilidade,
+    // mas não executar a lógica se não for necessário. O componente Comments
+    // agora lida com a submissão diretamente.
+    
+    // Verificamos o comentário - se já tiver ID, ele já foi salvo pelo componente Comments
+    if (comment.id) {
+      console.log('Comentário já possui ID, não precisamos salvá-lo novamente:', comment.id);
+      return comment;
+    }
+    
     console.log('ProjectId:', projectId);
     console.log('FolderId:', folderId);
     console.log('VideoId:', videoId);
@@ -172,6 +267,7 @@ function VideoPlayerPageContent() {
         setComments(prevComments => [formattedComment, ...prevComments]);
         setTempDrawing(null);
         toast.success('Comentário enviado com sucesso!');
+        return formattedComment;
       } catch (fetchError) {
         if (fetchError.name === 'AbortError') {
           console.error('Fetch request timed out');
@@ -223,7 +319,10 @@ function VideoPlayerPageContent() {
             comments={comments}
             setComments={setComments}
             tempDrawing={tempDrawing}
-            onClearDrawing={() => setTempDrawing(null)}
+            onClearDrawing={() => {
+              console.log('Clearing temp drawing');
+              setTempDrawing(null);
+            }}
             videoId={videoId}
             projectId={projectId}
             folderId={folderId}

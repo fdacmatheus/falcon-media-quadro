@@ -8,9 +8,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "init-db": "node src/scripts/initDb.cjs",
-    "migrate": "node src/config/migration.js",
-    "add-hidden-flag": "node src/config/add_hidden_flag.js"
+    "init-db": "node src/database/scripts/initDb.cjs",
+    "migrate": "node src/database/scripts/migration.js",
+    "add-hidden-flag": "node src/database/scripts/add_hidden_flag.js"
   },
   "dependencies": {
     "@heroicons/react": "^2.1.1",

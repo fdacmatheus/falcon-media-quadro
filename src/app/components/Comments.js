@@ -29,60 +29,12 @@ const Comments = ({
   useEffect(() => {
     console.log('Componente Comments montado, configurando listeners');
     console.log('IDs disponíveis:', { projectId, folderId, videoId });
+    console.log('Estado atual do tempDrawing:', tempDrawing ? 'Presente' : 'Ausente');
     
-    // Timeout para garantir que o DOM esteja pronto
-    const timeoutId = setTimeout(() => {
-      const commentForm = document.getElementById('commentForm');
-      const submitButton = document.getElementById('submitCommentButton');
-      
-      if (commentForm && submitButton) {
-        console.log('Form e botão encontrados, configurando listener direto');
-        
-        // Adicionar um evento de clique diretamente no botão
-        const clickHandler = (e) => {
-          e.preventDefault();
-          console.log('Submit button clicked via event listener');
-          console.log('IDs verificados:', { projectId, folderId, videoId });
-          
-          if (!projectId || !folderId || !videoId) {
-            console.error('Faltam IDs necessários:', { projectId, folderId, videoId });
-            toast.error('Erro: IDs necessários não encontrados');
-            return;
-          }
-          
-          // Verificar se há texto ou desenho
-          if (newComment.trim() || tempDrawing) {
-            // Disparar submit manualmente
-            const submitEvent = new Event('submit', { cancelable: true, bubbles: true });
-            commentForm.dispatchEvent(submitEvent);
-          } else {
-            console.log('Sem conteúdo para enviar');
-          }
-        };
-        
-        // Remover handler anterior se existir
-        submitButton.removeEventListener('click', clickHandler);
-        // Adicionar novo handler
-        submitButton.addEventListener('click', clickHandler);
-        
-        console.log('Event listener configurado com sucesso');
-      } else {
-        console.warn('Form ou botão não encontrados no DOM');
-      }
-    }, 500);
+    // REMOÇÃO do Timeout e event listeners adicionais
+    // Vamos simplificar e usar apenas o onClick direto no botão
     
-    return () => {
-      clearTimeout(timeoutId);
-      
-      // Limpar event listeners na desmontagem
-      const submitButton = document.getElementById('submitCommentButton');
-      if (submitButton) {
-        console.log('Removendo event listeners na desmontagem');
-        const newSubmitButton = submitButton.cloneNode(true);
-        submitButton.parentNode.replaceChild(newSubmitButton, submitButton);
-      }
-    };
-  }, [newComment, tempDrawing, projectId, folderId, videoId]);
+  }, [projectId, folderId, videoId]); // Removidas dependências que causavam re-renderização excessiva
 
   // Função para fazer chamada direta à API
   const makeDirectAPICall = async (comment) => {
@@ -143,7 +95,7 @@ const Comments = ({
   };
 
   const formatVideoTime = (timeInSeconds) => {
-    if (isNaN(timeInSeconds) || timeInSeconds === null) return '0:00';
+    if (isNaN(timeInSeconds) || timeInSeconds === null || !isFinite(timeInSeconds)) return '0:00';
     const hours = Math.floor(timeInSeconds / 3600);
     const minutes = Math.floor((timeInSeconds % 3600) / 60);
     const seconds = Math.floor(timeInSeconds % 60);
@@ -161,8 +113,22 @@ const Comments = ({
     console.log('Has drawing:', !!tempDrawing);
     console.log('IDs para envio:', { projectId, folderId, videoId });
     
-    if (!newComment.trim() && !tempDrawing) {
-      console.log('No comment text or drawing, returning early');
+    // Verificação adicional para debug
+    if (!tempDrawing) {
+      console.log('tempDrawing é falso (null/undefined)');
+    } else {
+      console.log('tempDrawing está presente com dados, comprimento:', tempDrawing.length);
+    }
+    
+    // Verificar se há conteúdo para enviar
+    const hasText = newComment.trim().length > 0;
+    const hasDrawing = tempDrawing !== null && tempDrawing !== undefined;
+    
+    console.log('Verificação de conteúdo:', { hasText, hasDrawing });
+    
+    if (!hasText && !hasDrawing) {
+      console.log('Sem conteúdo para enviar (texto ou desenho)');
+      toast.error('Adicione um comentário ou desenho antes de enviar');
       return;
     }
 
@@ -176,23 +142,74 @@ const Comments = ({
         return;
       }
 
+      // Verificar e normalizar o tempo atual
+      let safeCurrentTime = 0;
+      try {
+        safeCurrentTime = parseFloat(currentTime);
+        if (isNaN(safeCurrentTime) || !isFinite(safeCurrentTime)) {
+          console.warn('currentTime inválido:', currentTime, 'usando 0');
+          safeCurrentTime = 0;
+        }
+      } catch (e) {
+        console.error('Erro ao processar currentTime:', e);
+        safeCurrentTime = 0;
+      }
+
+      // Preparar o formato correto para o desenho
+      let drawingDataJson = null;
+      if (tempDrawing) {
+        try {
+          // Verificar se já é um JSON válido
+          const testParse = JSON.parse(tempDrawing);
+          
+          // Verificar se o timestamp é válido
+          if (testParse.timestamp !== undefined) {
+            let timestamp = parseFloat(testParse.timestamp);
+            if (isNaN(timestamp) || !isFinite(timestamp)) {
+              console.warn('Timestamp inválido no objeto de desenho, corrigindo');
+              testParse.timestamp = safeCurrentTime;
+              drawingDataJson = JSON.stringify(testParse);
+            } else {
+              // Se for válido, manter o JSON original
+              drawingDataJson = tempDrawing;
+            }
+          } else {
+            // Se não tiver timestamp, adicionar
+            testParse.timestamp = safeCurrentTime;
+            drawingDataJson = JSON.stringify(testParse);
+          }
+          
+          console.log('tempDrawing processado como JSON válido');
+        } catch (e) {
+          // Se não for JSON válido, é uma string de imagem direta
+          // Criar objeto no formato esperado
+          const drawingObj = {
+            imageData: tempDrawing,
+            timestamp: safeCurrentTime
+          };
+          drawingDataJson = JSON.stringify(drawingObj);
+          console.log('Convertido tempDrawing para formato objeto com timestamp');
+        }
+      }
+
       // Preparar dados para o backend
       const requestBody = {
         text: newComment.trim(),
         user_name: user?.name || 'Anônimo',
         user_email: user?.email || 'anonymous@example.com',
-        video_time: parseFloat(currentTime) || 0,
+        video_time: safeCurrentTime,
         parentId: null,
         project_id: projectId,
         folder_id: folderId,
         video_id: videoId,
-        drawing_data: tempDrawing ? JSON.stringify({
-          imageData: tempDrawing,
-          timestamp: parseFloat(currentTime) || 0
-        }) : null
+        drawing_data: drawingDataJson
       };
 
-      console.log('Request body:', requestBody);
+      console.log('Request body para API:', {
+        ...requestBody,
+        video_time: safeCurrentTime,
+        drawing_data: drawingDataJson ? 'Presente' : 'Ausente'
+      });
 
       // Fazer a chamada fetch diretamente
       const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`, {
@@ -238,18 +255,8 @@ const Comments = ({
       
       toast.success('Comentário adicionado com sucesso!');
       
-      // Notificar os handlers apenas para manter compatibilidade
-      if (onCommentSubmit) {
-        console.log('Notificando onCommentSubmit (não esperando resultado)');
-        onCommentSubmit(formattedComment).catch(err => {
-          console.log('Erro no onCommentSubmit (ignorado):', err);
-        });
-      } else if (onNewComment) {
-        console.log('Notificando onNewComment (não esperando resultado)');
-        onNewComment(formattedComment).catch(err => {
-          console.log('Erro no onNewComment (ignorado):', err);
-        });
-      }
+      // REMOVER a chamada a onCommentSubmit e onNewComment para evitar duplicação
+      // Essas funções já são chamadas pelo componente pai quando a lista de comentários muda
     } catch (error) {
       console.error('Erro ao salvar comentário:', error);
       toast.error('Erro ao salvar comentário: ' + error.message);
@@ -558,6 +565,71 @@ const Comments = ({
       user.email === comment.user_email
     );
 
+    // Validar o timestamp do vídeo para exibição
+    let validVideoTime = 0;
+    try {
+      validVideoTime = parseFloat(comment.videoTime || comment.video_time || 0);
+      if (isNaN(validVideoTime) || !isFinite(validVideoTime)) {
+        validVideoTime = 0;
+      }
+    } catch (e) {
+      console.error('Erro ao processar tempo do vídeo para comentário:', comment.id);
+      validVideoTime = 0;
+    }
+    
+    // Verificar se o comentário tem desenho em qualquer formato possível
+    let hasDrawing = false;
+    let drawingData = null;
+    let drawingTimestamp = validVideoTime;
+    
+    // Verificar diversas possibilidades de onde o desenho pode estar
+    if (comment.drawing) {
+      hasDrawing = true;
+      if (typeof comment.drawing === 'object') {
+        drawingData = comment.drawing;
+        if (comment.drawing.timestamp) {
+          drawingTimestamp = parseFloat(comment.drawing.timestamp) || validVideoTime;
+        }
+      } else if (typeof comment.drawing === 'string') {
+        hasDrawing = true;
+        drawingData = { imageData: comment.drawing, timestamp: validVideoTime };
+      }
+    } else if (comment.drawing_data) {
+      hasDrawing = true;
+      try {
+        if (typeof comment.drawing_data === 'string') {
+          const parsed = JSON.parse(comment.drawing_data);
+          drawingData = parsed;
+          if (parsed.timestamp) {
+            drawingTimestamp = parseFloat(parsed.timestamp) || validVideoTime;
+          }
+        } else if (typeof comment.drawing_data === 'object') {
+          drawingData = comment.drawing_data;
+          if (comment.drawing_data.timestamp) {
+            drawingTimestamp = parseFloat(comment.drawing_data.timestamp) || validVideoTime;
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao processar drawing_data:', e);
+        if (comment.drawing_data.startsWith && comment.drawing_data.startsWith('data:')) {
+          drawingData = { imageData: comment.drawing_data, timestamp: validVideoTime };
+        }
+      }
+    }
+    
+    // Validar o timestamp do desenho
+    if (isNaN(drawingTimestamp) || !isFinite(drawingTimestamp)) {
+      drawingTimestamp = validVideoTime;
+    }
+    
+    // Debug para verificar os dados de desenho
+    console.log(`Comentário ${comment.id} renderizado:`, {
+      hasDrawing,
+      drawingTimestamp,
+      validVideoTime,
+      drawingData: drawingData ? 'Presente' : 'Ausente'
+    });
+
     return (
       <div className={`p-4 border-b border-[#3F3F3F] ${comment.resolved ? 'bg-[#1F3F1F]/20' : ''} group relative`}>
         <div className="flex items-start gap-3">
@@ -574,43 +646,25 @@ const Comments = ({
                 className="text-[#D00102] text-sm font-medium cursor-pointer hover:underline"
                 onClick={() => {
                   const time = parseFloat(comment.videoTime || comment.video_time) || 0;
-                  console.log('Clicou no timestamp:', time);
-                  onTimeClick?.(time);
+                  if (isNaN(time) || !isFinite(time)) {
+                    console.warn('Timestamp inválido no comentário:', comment.id);
+                    onTimeClick?.(0);
+                  } else {
+                    console.log('Clicou no timestamp:', time);
+                    onTimeClick?.(time);
+                  }
                 }}
               >
-                at {formatVideoTime(comment.videoTime || comment.video_time)}
+                at {formatVideoTime(validVideoTime)}
               </span>
-              {comment.drawing && (
+              {hasDrawing && (
                 <span className="text-[#D00102] text-sm flex items-center gap-1 cursor-pointer" 
                   onClick={() => {
-                    // Extrair o timestamp do desenho
-                    let drawingTime = comment.videoTime || comment.video_time || 0;
-                    
-                    // Para desenhos no novo formato
-                    if (typeof comment.drawing === 'object' && comment.drawing.timestamp) {
-                      drawingTime = comment.drawing.timestamp;
-                    } 
-                    // Para desenhos no formato antigo vindos do banco
-                    else if (comment.drawing_data) {
-                      try {
-                        const drawingData = JSON.parse(comment.drawing_data);
-                        if (drawingData.timestamp) {
-                          drawingTime = drawingData.timestamp;
-                        }
-                      } catch (e) {
-                        console.error('Error parsing drawing data:', e);
-                      }
-                    }
-                    
-                    // Navegar para o timestamp do desenho
-                    onTimeClick?.(parseFloat(drawingTime) || 0);
+                    console.log('Clicou no desenho, navegando para:', drawingTimestamp);
+                    onTimeClick?.(drawingTimestamp);
                   }}>
                   <PencilIcon className="w-4 h-4" />
-                  Drawing at {formatVideoTime(
-                    (typeof comment.drawing === 'object' && comment.drawing.timestamp) 
-                      ? comment.drawing.timestamp 
-                      : (comment.videoTime || comment.video_time || 0)
-                  )}
+                  Drawing at {formatVideoTime(drawingTimestamp)}
                 </span>
               )}
               {comment.resolved && (
@@ -755,6 +809,18 @@ const Comments = ({
     <div className="h-full flex flex-col">
       <div className="p-4 border-b border-[#3F3F3F]">
         <h2 className="text-white text-xl font-bold">Comments</h2>
+        
+        {/* Debug info */}
+        <div className="bg-black bg-opacity-70 text-white p-2 text-xs mt-2">
+          <div className="text-green-500">Debug Info:</div>
+          tempDrawing: {tempDrawing ? 
+            <span className="text-green-400">Presente ({typeof tempDrawing === 'string' ? tempDrawing.slice(0, 20) + '...' : 'não é string'})</span> : 
+            <span className="text-red-400">Ausente</span>}
+          <br />
+          TextComment: {newComment.trim() ? 
+            <span className="text-green-400">Presente</span> : 
+            <span className="text-red-400">Ausente</span>}
+        </div>
       </div>
 
       <div className="p-4 border-b border-[#3F3F3F]">
@@ -792,18 +858,39 @@ const Comments = ({
                 <button
                   id="submitCommentButton"
                   type="button" 
-                  disabled={!newComment.trim() && !tempDrawing}
+                  disabled={false}
                   onClick={(e) => {
                     e.preventDefault();
                     console.log('Submit button clicked directly');
+                    
+                    // Evitar duplicação - verificar se já está em andamento
+                    if (document.getElementById('submitCommentButton').disabled) {
+                      console.log('Botão já está processando uma submissão');
+                      return;
+                    }
+                    
+                    // Verificar conteúdo primeiro
+                    const hasContent = !!(newComment.trim() || tempDrawing);
+                    console.log('Tem conteúdo para enviar:', hasContent);
+                    
+                    if (!hasContent) {
+                      toast.error('Adicione um comentário ou desenho antes de enviar');
+                      return;
+                    }
+                    
+                    // Desabilitar o botão temporariamente para evitar duplo clique
+                    document.getElementById('submitCommentButton').disabled = true;
+                    
                     // Chamar diretamente o handleSubmit
-                    handleSubmit(new Event('submit'));
+                    handleSubmit(e).finally(() => {
+                      // Re-habilitar o botão após a conclusão (sucesso ou erro)
+                      setTimeout(() => {
+                        const btn = document.getElementById('submitCommentButton');
+                        if (btn) btn.disabled = false;
+                      }, 1000);
+                    });
                   }}
-                  className={`flex-1 bg-[#D00102] text-white px-4 py-2 rounded-lg transition-colors ${
-                    !newComment.trim() && !tempDrawing 
-                      ? 'opacity-50 cursor-not-allowed' 
-                      : 'hover:bg-[#D00102]/90'
-                  }`}
+                  className={`flex-1 bg-[#D00102] text-white px-4 py-2 rounded-lg transition-colors hover:bg-[#D00102]/90`}
                 >
                   Send
                 </button>
