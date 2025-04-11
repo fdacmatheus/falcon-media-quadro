@@ -17,16 +17,60 @@ class DbService {
   }
 
   // Função para obter todos os comentários de um vídeo
-  async getComments(projectId, folderId, videoId) {
-    console.log('DbService: getComments iniciado com IDs:', { projectId, folderId, videoId });
+  async getComments(projectId, folderId, videoId, versionId = null) {
+    console.log('DbService: getComments iniciado com IDs:', { 
+      projectId, folderId, videoId, versionId: versionId || 'não especificado (todos)' 
+    });
     
     try {
-      const results = await this.executeQuery(
-        'SELECT * FROM comments WHERE project_id = ? AND folder_id = ? AND video_id = ? ORDER BY created_at DESC',
-        [projectId, folderId, videoId]
-      );
+      let query, params;
       
-      console.log(`DbService: ${results.length} comentários encontrados`);
+      // Se um versionId for fornecido, incluir comentários dessa versão específica
+      // E TAMBÉM incluir comentários sem versão especificada (version_id IS NULL)
+      if (versionId) {
+        query = `
+          SELECT * FROM comments 
+          WHERE project_id = ? 
+          AND folder_id = ? 
+          AND video_id = ? 
+          AND (version_id = ? OR version_id IS NULL)
+          ORDER BY created_at DESC
+        `;
+        params = [projectId, folderId, videoId, versionId];
+        console.log('DbService: Filtrando comentários pela versão específica E comentários sem versão');
+      } else {
+        // Sem versionId especificado, buscar todos os comentários
+        query = `
+          SELECT * FROM comments 
+          WHERE project_id = ? 
+          AND folder_id = ? 
+          AND video_id = ?
+          ORDER BY created_at DESC
+        `;
+        params = [projectId, folderId, videoId];
+        console.log('DbService: Buscando todos os comentários (sem filtro de versão)');
+      }
+      
+      const results = await this.executeQuery(query, params);
+      
+      console.log(`DbService: ${results.length} comentários encontrados ${versionId ? 'para a versão especificada' : 'para todas as versões'}`);
+      
+      if (versionId) {
+        // Log de debug para verificar a distribuição de comentários por versão
+        const withVersion = results.filter(r => r.version_id === versionId).length;
+        const withoutVersion = results.filter(r => r.version_id === null).length;
+        const invalid = results.filter(r => r.version_id !== null && r.version_id !== versionId).length;
+        
+        console.log(`DbService: Detalhamento dos comentários:
+          - ${withVersion} específicos da versão ${versionId}
+          - ${withoutVersion} comentários sem versão específica
+          - ${invalid} comentários inválidos para esta consulta (não deveria haver nenhum)
+        `);
+        
+        if (invalid > 0) {
+          console.error('DbService: ERRO DE FILTRAGEM - Encontrados comentários de outras versões!');
+        }
+      }
       
       // Transformar resultados para garantir consistência
       const transformedResults = results.map(comment => {
@@ -134,9 +178,9 @@ class DbService {
   }
 
   // Função para criar um novo comentário
-  async createComment(projectId, folderId, videoId, parentId, userName, userEmail, text, videoTime, drawingData) {
+  async createComment(projectId, folderId, videoId, parentId, userName, userEmail, text, videoTime, drawingData, versionId = null) {
     console.log('DbService: createComment iniciado com:',
-      { projectId, folderId, videoId, parentId, userName });
+      { projectId, folderId, videoId, parentId, userName, versionId: versionId || 'não especificado' });
     
     try {
       // Garantir que o videoTime seja um número válido
@@ -188,12 +232,12 @@ class DbService {
         `INSERT INTO comments (
           project_id, folder_id, video_id, parent_id, 
           user_name, user_email, text, video_time, 
-          drawing_data, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          drawing_data, version_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
           projectId, folderId, videoId, parentId,
           userName, userEmail, text, safeVideoTime,
-          safeDrawingData
+          safeDrawingData, versionId
         ]
       );
       

@@ -26,6 +26,7 @@ export default function FolderContent({ projectId, folderId }) {
   const [uploading, setUploading] = useState(false);
   const [draggedVideo, setDraggedVideo] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
+  const [activeVersion, setActiveVersion] = useState(null);
 
   const fetchVideos = async () => {
     try {
@@ -303,6 +304,7 @@ export default function FolderContent({ projectId, folderId }) {
       setSelectedVideo(videoWithFullPath);
       setComments([]); 
       setCurrentTime(0); // Reset current time when selecting a new video
+      setActiveVersion(null); // Reset active version when selecting a new video
 
       if (!video?.id) {
         console.error('Invalid video:', video);
@@ -373,7 +375,15 @@ export default function FolderContent({ projectId, folderId }) {
         parentId: comment.parentId || null
       };
 
-      console.log('Enviando comentário:', commentData);
+      // IMPORTANTE: Adicionar version_id se estiver visualizando uma versão específica
+      if (activeVersion) {
+        commentData.version_id = activeVersion.id;
+        console.log('FolderContent: Adicionando version_id ao comentário:', activeVersion.id);
+      } else {
+        console.log('FolderContent: Sem versão ativa, comentário será salvo sem version_id');
+      }
+
+      console.log('Enviando comentário com dados completos:', commentData);
 
       const response = await fetch(
         `/api/projects/${projectId}/folders/${folderId}/videos/${selectedVideo.id}/comments`,
@@ -394,7 +404,22 @@ export default function FolderContent({ projectId, folderId }) {
       const savedComment = await response.json();
       console.log('Comment saved:', savedComment);
 
-      setComments(prevComments => [savedComment, ...prevComments]);
+      // Se tiver uma versão ativa, verificar se o comentário pertence à versão atual 
+      // antes de adicioná-lo à lista
+      if (activeVersion) {
+        if (savedComment.version_id === activeVersion.id) {
+          setComments(prevComments => [savedComment, ...prevComments]);
+          console.log('FolderContent: Comentário adicionado à lista atual (mesma versão)');
+        } else {
+          console.log('FolderContent: Comentário não pertence à versão atual, recarregando comentários');
+          // Recarregar comentários para garantir que a lista esteja correta
+          loadCommentsForVersion(activeVersion.id);
+        }
+      } else {
+        // Sem versão ativa, adicionar à lista normalmente
+        setComments(prevComments => [savedComment, ...prevComments]);
+      }
+
       setTempDrawing(null);
       toast.success('Comment saved successfully!');
 
@@ -524,6 +549,75 @@ export default function FolderContent({ projectId, folderId }) {
     }
   };
 
+  const handleVersionChange = (version) => {
+    console.log('Versão alterada em FolderContent:', version);
+    setActiveVersion(version);
+    
+    // Carregar comentários para esta versão específica
+    loadCommentsForVersion(version.id);
+  };
+  
+  const loadCommentsForVersion = async (versionId) => {
+    if (!selectedVideo?.id) {
+      console.error('Não foi possível carregar comentários: vídeo não selecionado');
+      return;
+    }
+    
+    try {
+      console.log('FolderContent: Carregando comentários para versão:', versionId);
+      // Limpar comentários atuais enquanto carrega novos para evitar mostrar comentários antigos
+      setComments([]); 
+      
+      let url = `/api/projects/${projectId}/folders/${folderId}/videos/${selectedVideo.id}/comments`;
+      if (versionId) {
+        url += `?versionId=${versionId}`;
+      }
+      
+      console.log('FolderContent: URL da requisição de comentários:', url);
+      
+      const response = await fetch(url, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Falha ao carregar comentários para a versão: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(`FolderContent: ${data.length} comentários carregados para versão ${versionId}`);
+      
+      // Verificar se os comentários têm a versão correta e logar detalhes
+      if (versionId && data.length > 0) {
+        const correctVersionComments = data.filter(c => c.version_id === versionId);
+        console.log(`FolderContent: ${correctVersionComments.length} de ${data.length} comentários pertencem à versão ${versionId}`);
+        
+        if (correctVersionComments.length !== data.length) {
+          console.warn('FolderContent: ALERTA - Alguns comentários não pertencem à versão solicitada!');
+          console.log('FolderContent: Mostrando os 3 primeiros comentários:');
+          data.slice(0, 3).forEach(c => {
+            console.log(`  - ID: ${c.id}, version_id: ${c.version_id || 'NULL'}, texto: ${c.text?.substring(0, 30) || 'sem texto'}`);
+          });
+        }
+      }
+      
+      // Antes de atualizar os comentários, validar se a versão ativa ainda é a mesma
+      // Isso evita condições de corrida quando o usuário muda rapidamente entre versões
+      if ((!versionId && !activeVersion) || (activeVersion && versionId === activeVersion.id)) {
+        console.log('FolderContent: Atualizando comentários na interface');
+        setComments(data);
+      } else {
+        console.warn('FolderContent: Versão ativa mudou durante o carregamento, ignorando comentários');
+      }
+    } catch (error) {
+      console.error('FolderContent: Erro ao carregar comentários por versão:', error);
+      toast.error('Erro ao carregar comentários para a versão');
+    }
+  };
+
   if (loading) {
     return <div className="text-[#6B7280]">Loading...</div>;
   }
@@ -592,6 +686,7 @@ export default function FolderContent({ projectId, folderId }) {
                 videoId={selectedVideo.id}
                 initialStatus={selectedVideo.video_status || 'no_status'}
                 onStatusChange={handleVideoStatusUpdate}
+                onVersionChange={handleVersionChange}
               />
             </div>
             <div className="w-96 bg-[#1A1B1E] rounded-lg overflow-hidden">
@@ -607,6 +702,7 @@ export default function FolderContent({ projectId, folderId }) {
                 tempDrawing={tempDrawing}
                 onClearDrawing={() => setTempDrawing(null)}
                 setComments={setComments}
+                activeVersion={activeVersion}
               />
             </div>
           </div>

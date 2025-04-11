@@ -306,7 +306,7 @@ export class DbService {
   }
 
   // Comentários
-  static async createComment(projectId, folderId, videoId, parentId, userName, userEmail, text, videoTime, drawingData) {
+  static async createComment(projectId, folderId, videoId, parentId, userName, userEmail, text, videoTime, drawingData, versionId = null) {
     try {
       console.log('Criando comentário:', {
         projectId,
@@ -317,7 +317,8 @@ export class DbService {
         userEmail,
         text: text ? text.substring(0, 20) + '...' : null, // Mostrar apenas parte do texto para não poluir logs
         videoTime,
-        hasDrawing: !!drawingData
+        hasDrawing: !!drawingData,
+        versionId: versionId || 'não especificado'
       });
 
       // Verificações de parâmetros
@@ -392,8 +393,8 @@ export class DbService {
           `INSERT INTO comments (
             id, project_id, folder_id, video_id, parent_id,
             user_name, user_email, text, video_time, drawing_data,
-            likes, liked_by, resolved, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            likes, liked_by, resolved, created_at, updated_at, version_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             projectId,
@@ -409,7 +410,8 @@ export class DbService {
             '[]',
             0,
             now,
-            now
+            now,
+            versionId
           ]
         );
 
@@ -422,7 +424,8 @@ export class DbService {
         console.log('Comentário criado com sucesso:', {
           id: result.rows[0].id,
           text: result.rows[0].text ? result.rows[0].text.substring(0, 20) + '...' : null,
-          hasDrawing: !!result.rows[0].drawing_data
+          hasDrawing: !!result.rows[0].drawing_data,
+          versionId: result.rows[0].version_id || 'não especificado'
         });
         
         return result.rows[0];
@@ -436,17 +439,48 @@ export class DbService {
     }
   }
 
-  static async getComments(projectId, folderId, videoId) {
+  static async getComments(projectId, folderId, videoId, versionId = null) {
     try {
-      console.log('Buscando comentários:', { projectId, folderId, videoId });
+      console.log('DbService: getComments iniciado com IDs:', { 
+        projectId, folderId, videoId, versionId: versionId || 'não especificado (todos)' 
+      });
       
-      // Buscar todos os comentários do vídeo
-      const result = await query(
-        'SELECT * FROM comments WHERE project_id = ? AND folder_id = ? AND video_id = ? ORDER BY created_at ASC',
-        [projectId, folderId, videoId]
-      );
-
+      let query, params;
+      
+      // Se um versionId for fornecido, incluir APENAS comentários dessa versão específica
+      // Importante: NÃO incluir comentários sem versão específica (version_id IS NULL)
+      if (versionId) {
+        query = `
+          SELECT * FROM comments 
+          WHERE project_id = ? 
+          AND folder_id = ? 
+          AND video_id = ? 
+          AND version_id = ?
+          ORDER BY created_at DESC
+        `;
+        params = [projectId, folderId, videoId, versionId];
+        console.log('DbService: Filtrando comentários APENAS pela versão específica:', versionId);
+      } else {
+        // Buscar todos os comentários do vídeo
+        query = `
+          SELECT * FROM comments 
+          WHERE project_id = ? 
+          AND folder_id = ? 
+          AND video_id = ?
+          ORDER BY created_at DESC
+        `;
+        params = [projectId, folderId, videoId];
+        console.log('DbService: Buscando todos os comentários (sem filtro de versão)');
+      }
+      
+      const result = await query(query, params);
+  
       console.log('Total de comentários encontrados:', result.rows.length);
+
+      // Adicionando log detalhado de comentários retornados
+      result.rows.forEach(comment => {
+        console.log(`Comentário ID: ${comment.id}, versão: ${comment.version_id || 'NULL'}, texto: ${comment.text?.substring(0, 30) || 'sem texto'}`);
+      });
 
       // Organizar comentários em uma estrutura hierárquica
       const comments = result.rows;

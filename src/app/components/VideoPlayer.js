@@ -7,6 +7,7 @@ import ComparisonMode from './ComparisonMode';
 import Header from './Header';
 import CommentMarker from './CommentMarker';
 import { toast } from 'react-hot-toast';
+import Comments from './Comments';
 
 const VideoPlayer = forwardRef(({ 
   videoUrl, 
@@ -27,7 +28,8 @@ const VideoPlayer = forwardRef(({
   onBack,
   onStatusChange,
   initialStatus,
-  onVersionCreated
+  onVersionCreated,
+  onVersionChange
 }, ref) => {
   const localVideoRef = useRef(null);
   const videoRef = ref || localVideoRef;
@@ -52,9 +54,11 @@ const VideoPlayer = forwardRef(({
   const [isDragging, setIsDragging] = useState(false);
   const [currentVideoUrl, setCurrentVideoUrl] = useState(videoUrl);
   const [activeVersion, setActiveVersion] = useState(null);
+  const [localComments, setLocalComments] = useState(comments);
 
   useEffect(() => {
     setCommentsCount(comments.length);
+    setLocalComments(comments);
   }, [comments]);
 
   useEffect(() => {
@@ -247,6 +251,11 @@ const VideoPlayer = forwardRef(({
   const handleVersionChange = (version) => {
     console.log('Switching to version:', version);
     
+    if (!version || !version.file_path) {
+      console.error('Versão inválida ou sem file_path:', version);
+      return;
+    }
+    
     const wasPlaying = isPlaying;
     if (isPlaying) {
       videoRef.current?.pause();
@@ -257,8 +266,20 @@ const VideoPlayer = forwardRef(({
     const currentPosition = videoRef.current?.currentTime || 0;
     
     // Update video URL
+    console.log('Setting currentVideoUrl to:', version.file_path);
     setCurrentVideoUrl(version.file_path);
     setActiveVersion(version);
+    
+    // Expor a versão ativa através do videoRef para que o componente pai possa acessá-la
+    if (videoRef.current) {
+      videoRef.current.activeVersion = version;
+    }
+    
+    // Notify parent about version change
+    if (onVersionChange) {
+      console.log('Notifying parent component about version change');
+      onVersionChange(version);
+    }
     
     // Reset loaded state
     setIsLoaded(false);
@@ -266,6 +287,7 @@ const VideoPlayer = forwardRef(({
     // When video is loaded, resume from same position with improved timing
     const resumePlayback = () => {
       if (videoRef.current) {
+        console.log('Video element loaded, setting currentTime to:', currentPosition);
         videoRef.current.currentTime = currentPosition;
         
         // If it was playing, resume playback
@@ -289,11 +311,23 @@ const VideoPlayer = forwardRef(({
 
     // Use the loadeddata event instead of setTimeout
     const handleVideoLoaded = () => {
+      console.log('Video loaded event triggered');
       resumePlayback();
       videoRef.current.removeEventListener('loadeddata', handleVideoLoaded);
     };
     
-    videoRef.current?.addEventListener('loadeddata', handleVideoLoaded);
+    if (videoRef.current) {
+      console.log('Adding loadeddata event listener');
+      videoRef.current.addEventListener('loadeddata', handleVideoLoaded);
+      
+      // Adicionar um timeout como fallback
+      setTimeout(() => {
+        if (!isLoaded && videoRef.current) {
+          console.log('Timeout fallback: forcing video load');
+          videoRef.current.load();
+        }
+      }, 500);
+    }
   };
 
   const togglePlay = async () => {
@@ -532,6 +566,12 @@ const VideoPlayer = forwardRef(({
         drawing: tempDrawing,
         parentId: comment.parentId || null
       };
+      
+      // Adicionar version_id se tiver uma versão ativa
+      if (activeVersion) {
+        commentData.version_id = activeVersion.id;
+        console.log('Adicionando comentário à versão:', activeVersion.id);
+      }
 
       console.log('Sending comment:', { projectId, folderId, videoId, commentData });
 
@@ -568,7 +608,7 @@ const VideoPlayer = forwardRef(({
         drawing: savedComment.drawing_data ? JSON.parse(savedComment.drawing_data) : null
       };
 
-      setComments(prevComments => [formattedComment, ...prevComments]);
+      setLocalComments(prevComments => [formattedComment, ...prevComments]);
       setTempDrawing(null);
       toast.success('Comment saved successfully!');
 
@@ -578,16 +618,84 @@ const VideoPlayer = forwardRef(({
     }
   };
 
+  useEffect(() => {
+    console.log('VideoPlayer - currentVideoUrl changed to:', currentVideoUrl);
+    
+    // Garantir que temos uma URL válida
+    if (!currentVideoUrl) {
+      console.error('URL de vídeo inválida ou vazia');
+      return;
+    }
+    
+    // Convertendo para URL absoluta e removendo prefixo /api/videos se presente
+    let absoluteUrl = currentVideoUrl;
+    if (absoluteUrl.startsWith('/api/videos/')) {
+      absoluteUrl = absoluteUrl.replace('/api/videos/', '/');
+      console.log('Corrigindo URL com prefixo incorreto:', absoluteUrl);
+    }
+    
+    if (!absoluteUrl.startsWith('http') && !absoluteUrl.startsWith('/')) {
+      absoluteUrl = '/' + absoluteUrl;
+      console.log('Convertendo para URL absoluta:', absoluteUrl);
+    }
+    
+    // Cada vez que a URL do vídeo muda, garantir que o elemento de vídeo seja atualizado
+    if (videoRef.current && absoluteUrl) {
+      const video = videoRef.current;
+      
+      // Se a URL atual for diferente da que está no src
+      const currentSrc = video.querySelector('source')?.src || video.src;
+      if (currentSrc !== absoluteUrl) {
+        console.log('Source URL differs, updating video element from', currentSrc, 'to', absoluteUrl);
+        
+        // Atualizar a fonte do vídeo
+        if (video.querySelector('source')) {
+          video.querySelector('source').src = absoluteUrl;
+        } else {
+          video.src = absoluteUrl;
+        }
+        
+        // Recarregar o vídeo
+        console.log('Recarregando vídeo');
+        video.load();
+      }
+    }
+  }, [currentVideoUrl]);
+
   if (showComparison) {
     return (
       <ComparisonMode
         onExit={handleExitComparison}
         userData={localUserData}
-        initialLeftUrl={videoUrl}
+        initialLeftUrl={currentVideoUrl}
         initialRightUrl={videoVersions.length > 0 ? videoVersions[0].file_path : ''}
         versions={[
-          { id: 'original', file_path: videoUrl, name: 'Original', created_at: new Date().toISOString() },
-          ...videoVersions
+          // Incluir o vídeo original como uma versão
+          { 
+            id: 'original', 
+            file_path: currentVideoUrl, 
+            name: 'Original', 
+            created_at: new Date().toISOString(),
+            // Adicionar campos extras para garantir compatibilidade
+            author: localUserData?.name || 'Usuário',
+            label: 'Original'
+          },
+          // Garantir que todas as versões têm o campo file_path correto
+          ...videoVersions.map(version => {
+            // Criar uma cópia da versão para não modificar o original
+            const processedVersion = { ...version };
+            
+            // Garantir que a propriedade file_path está presente e formatada corretamente
+            if (processedVersion.file_path) {
+              // Verificar e ajustar o caminho se necessário
+              if (processedVersion.file_path.startsWith('/api/videos/')) {
+                processedVersion.file_path = processedVersion.file_path.replace('/api/videos/', '/');
+                console.log('VideoPlayer: Corrigindo URL de versão para ComparisonMode:', processedVersion.file_path);
+              }
+            }
+            
+            return processedVersion;
+          })
         ]}
       />
     );
@@ -609,6 +717,21 @@ const VideoPlayer = forwardRef(({
         onVersionChange={handleVersionChange}
         onCompareClick={handleCompareClick}
       />
+      
+      {/* Indicador de versão ativa */}
+      {activeVersion && (
+        <div className="bg-[#1A1A1A] px-4 py-2 text-sm flex items-center justify-between">
+          <div className="text-white flex items-center">
+            <span className="inline-block w-3 h-3 bg-green-500 rounded-full mr-2"></span>
+            <span>
+              Showing: {activeVersion.file_path ? activeVersion.file_path.split('/').pop() : 'Version ' + activeVersion.id.substring(0, 8)}
+            </span>
+          </div>
+          <span className="text-gray-400 text-xs">
+            Created at: {new Date(activeVersion.created_at).toLocaleString()}
+          </span>
+        </div>
+      )}
       
       <div 
         className="flex-1 relative"
@@ -644,8 +767,19 @@ const VideoPlayer = forwardRef(({
               onLoadedData={handleLoadedData}
               onClick={togglePlay}
               playsInline
+              key={currentVideoUrl}
+              onError={(e) => {
+                console.error('Erro ao carregar vídeo:', e.target.error, 'URL:', currentVideoUrl);
+                toast.error('Erro ao carregar o vídeo. Verifique o URL ou tente novamente.');
+              }}
             >
-              <source src={currentVideoUrl} type="video/mp4" />
+              <source 
+                src={currentVideoUrl && !currentVideoUrl.startsWith('http') && !currentVideoUrl.startsWith('/') 
+                  ? '/' + currentVideoUrl 
+                  : currentVideoUrl} 
+                type="video/mp4" 
+              />
+              Seu navegador não suporta vídeos.
             </video>
 
             {/* Debug info */}
@@ -780,6 +914,11 @@ const VideoPlayer = forwardRef(({
             )}
           </div>
         </div>
+      </div>
+
+      {/* Estrutura de controles do player */}
+      <div className="relative bg-black p-4">
+        {/* ... existing controls code ... */}
       </div>
     </div>
   );

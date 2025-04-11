@@ -44,7 +44,47 @@ const ComparisonMode = ({
 
   useEffect(() => {
     if (versions.length > 0) {
-      setCurrentVersions(versions);
+      // Processar as versões para garantir que os caminhos dos arquivos estejam corretos
+      const processedVersions = versions.map(version => {
+        // Criar uma cópia da versão para manipulação
+        const processedVersion = { ...version };
+        
+        // Ajustar o caminho do arquivo para URL absoluta se necessário
+        if (processedVersion.file_path) {
+          // Remover o prefixo '/api/videos/' se presente
+          if (processedVersion.file_path.startsWith('/api/videos/')) {
+            processedVersion.file_path = processedVersion.file_path.replace('/api/videos/', '/');
+            console.log('ComparisonMode: Removido prefixo incorreto da URL:', processedVersion.file_path);
+          }
+          
+          // Garantir que o caminho comece com '/'
+          if (!processedVersion.file_path.startsWith('http') && !processedVersion.file_path.startsWith('/')) {
+            processedVersion.file_path = '/' + processedVersion.file_path;
+            console.log('ComparisonMode: Convertido para caminho absoluto:', processedVersion.file_path);
+          }
+        }
+        
+        // Criar label, autor e data a partir dos dados disponíveis
+        processedVersion.label = processedVersion.name || `V${processedVersion.id}`.substring(0, 8);
+        processedVersion.author = processedVersion.author || localUserData?.name || 'User';
+        processedVersion.date = processedVersion.created_at 
+          ? new Date(processedVersion.created_at).toLocaleString()
+          : 'Data desconhecida';
+        
+        // Garantir que temos uma URL para esta versão
+        processedVersion.url = processedVersion.file_path || '';
+        
+        return processedVersion;
+      });
+      
+      console.log('ComparisonMode: Versões processadas:', processedVersions);
+      setCurrentVersions(processedVersions);
+      
+      // Definir versões padrão se tivermos pelo menos duas
+      if (processedVersions.length >= 2) {
+        setLeftVersion(processedVersions[0].id);
+        setRightVersion(processedVersions[processedVersions.length - 1].id);
+      }
     } else {
       setCurrentVersions([
         { 
@@ -99,55 +139,98 @@ const ComparisonMode = ({
     setIsPlaying(false);
   }, [leftVersion, rightVersion]);
 
+  useEffect(() => {
+    console.log('ComparisonMode: versions disponíveis:', versions.length);
+    console.log('ComparisonMode: leftVersion:', leftVersion);
+    console.log('ComparisonMode: rightVersion:', rightVersion);
+    console.log('ComparisonMode: URLs dos vídeos:', {
+      left: currentVersions.find(v => v.id === leftVersion)?.url || 'não encontrado',
+      right: currentVersions.find(v => v.id === rightVersion)?.url || 'não encontrado'
+    });
+  }, [versions, leftVersion, rightVersion, currentVersions]);
+
   const togglePlay = async () => {
-    if (!leftVideoRef.current || !rightVideoRef.current || !isLeftLoaded || !isRightLoaded) {
+    if (!leftVideoRef.current || !rightVideoRef.current) {
+      console.error('ComparisonMode: Referências de vídeo não disponíveis');
       return;
     }
 
     try {
       if (isPlaying) {
+        console.log('ComparisonMode: Pausando vídeos');
         setIsPlaying(false);
-        await Promise.all([
-          leftVideoRef.current.pause(),
-          rightVideoRef.current.pause()
-        ]);
+        
+        // Pausar ambos os vídeos
+        leftVideoRef.current.pause();
+        rightVideoRef.current.pause();
       } else {
+        console.log('ComparisonMode: Iniciando reprodução de vídeos');
+        
+        // Reiniciar se ambos terminaram
         if (leftEnded && rightEnded) {
+          console.log('ComparisonMode: Reiniciando vídeos do início');
           leftVideoRef.current.currentTime = 0;
           rightVideoRef.current.currentTime = 0;
           setLeftEnded(false);
           setRightEnded(false);
         }
 
-        const leftProgress = leftVideoRef.current.currentTime / leftDuration;
-        const rightTime = leftProgress * rightDuration;
+        // Forçar sincronização de tempo antes de reproduzir
+        const leftProgress = leftVideoRef.current.currentTime / (leftDuration || 1);
+        const rightTime = leftProgress * (rightDuration || 1);
+        
+        console.log('ComparisonMode: Sincronizando tempos:', {
+          leftTime: leftVideoRef.current.currentTime,
+          rightTime,
+          leftProgress,
+          leftDuration,
+          rightDuration
+        });
+        
         rightVideoRef.current.currentTime = rightTime;
 
-        const videosToPlay = [];
-        if (!leftEnded) {
-          leftVideoRef.current.muted = true;
-          videosToPlay.push(leftVideoRef.current);
-        }
-        if (!rightEnded) {
-          rightVideoRef.current.muted = true;
-          videosToPlay.push(rightVideoRef.current);
-        }
-
+        // Reproduzir vídeos
         setIsPlaying(true);
-        await Promise.all(videosToPlay.map(video => {
-          try {
-            return video.play();
-          } catch (error) {
-            console.error('Error playing video:', error);
-            return Promise.reject(error);
+        
+        // Garantir que ambos os vídeos estejam mudos para evitar problemas de reprodução automática
+        leftVideoRef.current.muted = true;
+        rightVideoRef.current.muted = true;
+        
+        // Tentar reproduzir ambos os vídeos
+        try {
+          // Usar Promise.allSettled para não falhar completamente se um vídeo falhar
+          const results = await Promise.allSettled([
+            leftVideoRef.current.play(),
+            rightVideoRef.current.play()
+          ]);
+          
+          // Verificar resultados
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              console.error(`ComparisonMode: Falha ao reproduzir vídeo ${index === 0 ? 'esquerdo' : 'direito'}:`, result.reason);
+            }
+          });
+          
+          // Se ambos falharem, mostrar notificação e parar reprodução
+          if (results.every(r => r.status === 'rejected')) {
+            console.error('ComparisonMode: Falha ao reproduzir ambos os vídeos');
+            setIsPlaying(false);
           }
-        }));
+        } catch (error) {
+          console.error('ComparisonMode: Erro na reprodução:', error);
+          setIsPlaying(false);
+        }
       }
     } catch (error) {
-      console.error('Error controlling playback:', error);
+      console.error('ComparisonMode: Erro ao controlar reprodução:', error);
       setIsPlaying(false);
-      leftVideoRef.current?.pause();
-      rightVideoRef.current?.pause();
+      // Tentar pausar em caso de erro
+      try {
+        leftVideoRef.current?.pause();
+        rightVideoRef.current?.pause();
+      } catch (pauseError) {
+        console.error('ComparisonMode: Erro adicional ao pausar vídeos:', pauseError);
+      }
     }
   };
 
@@ -304,7 +387,7 @@ const ComparisonMode = ({
           className="flex items-center gap-2 text-[#6B7280] hover:text-white transition-colors text-sm"
         >
           <ArrowLeftIcon className="w-4 h-4" />
-          Exit comparison mode
+          Exit Comparison Mode
         </button>
       </div>
 
@@ -320,17 +403,17 @@ const ComparisonMode = ({
             >
               {currentVersions.map(version => (
                 <option key={version.id} value={version.id}>
-                  {version.label}
+                  {version.label || `Versão ${version.id}`.substring(0, 8)}
                 </option>
               ))}
             </select>
             <div className="text-sm">
-              <span className="text-white">{currentVersions.find(v => v.id === leftVersion)?.author}</span>
-              <span className="text-gray-400 ml-2">{currentVersions.find(v => v.id === leftVersion)?.date}</span>
+              <span className="text-white">{currentVersions.find(v => v.id === leftVersion)?.author || 'Usuário'}</span>
+              <span className="text-gray-400 ml-2">{currentVersions.find(v => v.id === leftVersion)?.date || 'Data desconhecida'}</span>
             </div>
             <div className="text-white text-sm flex items-center gap-2">
               <span>{formatTime(currentTime)}</span>
-              <span className="text-gray-400">/ {currentVersions.find(v => v.id === leftVersion)?.duration}</span>
+              <span className="text-gray-400">/ {formatTime(leftDuration)}</span>
             </div>
           </div>
           <div className="relative w-full h-full">
@@ -342,6 +425,7 @@ const ComparisonMode = ({
               onLoadedMetadata={(e) => handleLoadedMetadata(e, true)}
               onWaiting={() => setIsBuffering(true)}
               onPlaying={() => setIsBuffering(false)}
+              onLoadedData={() => console.log('Vídeo esquerdo carregado com URL:', currentVersions.find(v => v.id === leftVersion)?.url)}
               onEnded={() => {
                 setLeftEnded(true);
                 if (!rightEnded) {
@@ -367,17 +451,17 @@ const ComparisonMode = ({
             >
               {currentVersions.map(version => (
                 <option key={version.id} value={version.id}>
-                  {version.label}
+                  {version.label || `Versão ${version.id}`.substring(0, 8)}
                 </option>
               ))}
             </select>
             <div className="text-sm">
-              <span className="text-white">{currentVersions.find(v => v.id === rightVersion)?.author}</span>
-              <span className="text-gray-400 ml-2">{currentVersions.find(v => v.id === rightVersion)?.date}</span>
+              <span className="text-white">{currentVersions.find(v => v.id === rightVersion)?.author || 'Usuário'}</span>
+              <span className="text-gray-400 ml-2">{currentVersions.find(v => v.id === rightVersion)?.date || 'Data desconhecida'}</span>
             </div>
             <div className="text-white text-sm flex items-center gap-2">
               <span>{formatTime(currentTime)}</span>
-              <span className="text-gray-400">/ {currentVersions.find(v => v.id === rightVersion)?.duration}</span>
+              <span className="text-gray-400">/ {formatTime(rightDuration)}</span>
             </div>
           </div>
           <div className="relative w-full h-full">
@@ -389,6 +473,7 @@ const ComparisonMode = ({
               onLoadedMetadata={(e) => handleLoadedMetadata(e, false)}
               onWaiting={() => setIsBuffering(true)}
               onPlaying={() => setIsBuffering(false)}
+              onLoadedData={() => console.log('Vídeo direito carregado com URL:', currentVersions.find(v => v.id === rightVersion)?.url)}
               onEnded={() => {
                 setRightEnded(true);
                 if (!leftEnded) {

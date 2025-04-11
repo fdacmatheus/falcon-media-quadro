@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { DbService } from '@/services';
+import { query } from '@/database/config/database'; // Importação da função query
 
 export async function GET(request, { params }) {
   try {
@@ -8,7 +9,14 @@ export async function GET(request, { params }) {
     const folderId = paramsData.folderId;
     const videoId = paramsData.videoId;
     
-    console.log('GET /comments - Parâmetros:', { projectId, folderId, videoId });
+    // Obter versionId da URL query se presente
+    const { searchParams } = new URL(request.url);
+    const versionId = searchParams.get('versionId');
+    
+    console.log('GET /comments - Parâmetros:', { 
+      projectId, folderId, videoId, 
+      versionId: versionId || 'não especificado (todos)' 
+    });
 
     // Validate parameters
     if (!projectId || !folderId || !videoId) {
@@ -19,8 +27,40 @@ export async function GET(request, { params }) {
       );
     }
 
-    const comments = await DbService.getComments(projectId, folderId, videoId);
-    console.log('GET /comments - Total de comentários:', comments.length);
+    // IMPORTANTE: Para corrigir o problema, vamos fazer uma consulta SQL direta para garantir
+    // que apenas comentários da versão específica sejam retornados
+    let comments;
+    
+    if (versionId) {
+      console.log('Filtrando APENAS comentários da versão:', versionId);
+      // Consulta SQL direta para obter apenas comentários da versão específica
+      const result = await query(
+        'SELECT * FROM comments WHERE project_id = ? AND folder_id = ? AND video_id = ? AND version_id = ? ORDER BY created_at DESC',
+        [projectId, folderId, videoId, versionId]
+      );
+      comments = result.rows;
+    } else {
+      // Sem versão específica, usar a função normal do DbService
+      comments = await DbService.getComments(projectId, folderId, videoId);
+    }
+    
+    console.log('GET /comments - Total de comentários:', comments.length, versionId ? '(filtrados por versão)' : '(todos)');
+    
+    // Verificar quantos comentários têm version_id
+    const commentsWithVersionId = comments.filter(c => c.version_id).length;
+    const commentsWithoutVersionId = comments.filter(c => !c.version_id).length;
+    console.log(`GET /comments - Distribuição de comentários:
+      - ${commentsWithVersionId} comentários têm version_id definido
+      - ${commentsWithoutVersionId} comentários sem version_id (null)
+    `);
+    
+    if (versionId) {
+      console.log(`GET /comments - Verificando filtro: Comentários devem ter version_id=${versionId}`);
+      const matchingVersionComments = comments.filter(c => c.version_id === versionId).length;
+      console.log(`GET /comments - Após filtragem:
+        - ${matchingVersionComments} comentários com version_id=${versionId}
+      `);
+    }
     
     // Processar comentários para garantir que todos os campos necessários estejam presentes
     const processedComments = comments.map(comment => {
@@ -105,8 +145,6 @@ export async function POST(request, { params }) {
     const folderId = paramsData.folderId;
     const videoId = paramsData.videoId;
     
-    console.log('POST /comments - Parâmetros:', { projectId, folderId, videoId });
-    
     // Validar parâmetros
     if (!projectId || !folderId || !videoId) {
       console.error('Parâmetros inválidos:', { projectId, folderId, videoId });
@@ -121,7 +159,8 @@ export async function POST(request, { params }) {
     console.log('POST /comments - Dados recebidos:', {
       ...data,
       text: data.text ? data.text.substring(0, 30) + (data.text.length > 30 ? '...' : '') : null,
-      drawing_data: data.drawing_data ? 'Presente (comprimento: ' + data.drawing_data.length + ')' : 'Ausente'
+      drawing_data: data.drawing_data ? 'Presente (comprimento: ' + data.drawing_data.length + ')' : 'Ausente',
+      version_id: data.version_id || 'não especificado'
     });
     
     // Validar dados obrigatórios
@@ -179,7 +218,7 @@ export async function POST(request, { params }) {
       }
     }
     
-    // Criar o comentário no banco de dados
+    // Criar o comentário no banco de dados com suporte a version_id
     const savedComment = await DbService.createComment(
       projectId,
       folderId,
@@ -188,15 +227,18 @@ export async function POST(request, { params }) {
       data.user_name || 'Anonymous',
       data.user_email || 'anonymous@example.com',
       data.text || '',
-      videoTime,
-      processedDrawingData
+      data.video_time || 0,
+      data.drawing_data,
+      data.version_id || null // Passar version_id para o dbService
     );
     
     console.log('POST /comments - Comentário salvo com sucesso:', {
       id: savedComment.id,
       hasDrawing: !!savedComment.drawing_data,
-      videoTime: savedComment.video_time
+      videoTime: savedComment.video_time,
+      version_id: savedComment.version_id || 'não especificado'
     });
+    
     return NextResponse.json(savedComment);
   } catch (error) {
     console.error('POST /comments - Erro:', error);

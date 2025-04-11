@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { HeartIcon as HeartOutline } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartSolid } from '@heroicons/react/24/solid';
 import { CheckCircleIcon, PencilIcon } from '@heroicons/react/24/outline';
@@ -17,13 +17,16 @@ const Comments = ({
   videoId,
   projectId,
   folderId,
-  onCommentSubmit
+  onCommentSubmit,
+  activeVersion
 }) => {
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [editingComment, setEditingComment] = useState(null);
   const [editText, setEditText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitBtnRef = useRef(null);
 
   // Efeito para garantir que o botão de submit seja registrado corretamente
   useEffect(() => {
@@ -35,6 +38,14 @@ const Comments = ({
     // Vamos simplificar e usar apenas o onClick direto no botão
     
   }, [projectId, folderId, videoId]); // Removidas dependências que causavam re-renderização excessiva
+
+  // Adicionar logs para ajudar na depuração da versão ativa
+  useEffect(() => {
+    if (activeVersion) {
+      console.log('Comments: Versão ativa alterada para:', activeVersion);
+      console.log('Comentários atuais:', comments.length);
+    }
+  }, [activeVersion, comments]);
 
   // Função para fazer chamada direta à API
   const makeDirectAPICall = async (comment) => {
@@ -204,6 +215,12 @@ const Comments = ({
         video_id: videoId,
         drawing_data: drawingDataJson
       };
+
+      // Incluir version_id se houver uma versão ativa
+      if (activeVersion) {
+        requestBody.version_id = activeVersion.id;
+        console.log('Adicionando version_id ao comentário:', activeVersion.id);
+      }
 
       console.log('Request body para API:', {
         ...requestBody,
@@ -810,6 +827,16 @@ const Comments = ({
       <div className="p-4 border-b border-[#3F3F3F]">
         <h2 className="text-white text-xl font-bold">Comments</h2>
         
+        {/* Mostrar informação da versão ativa */}
+        {activeVersion && (
+          <div className="mt-2 text-sm text-gray-400">
+            Showing comments for version: <span className="text-yellow-400">{activeVersion.id.substring(0, 8)}</span>
+            <div className="text-xs text-gray-500 mt-1">
+              Created: {new Date(activeVersion.created_at).toLocaleString()}
+            </div>
+          </div>
+        )}
+        
         {/* Debug info */}
         <div className="bg-black bg-opacity-70 text-white p-2 text-xs mt-2">
           <div className="text-green-500">Debug Info:</div>
@@ -912,10 +939,26 @@ const Comments = ({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {comments.map(comment => (
-          <CommentItem key={comment.id} comment={comment} />
-        ))}
+      <div className="flex-1 overflow-y-auto p-2">
+        {comments.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-500 text-center">
+              {activeVersion 
+                ? `No comments yet for this version. Be the first to comment!` 
+                : `No comments yet. Be the first to comment!`}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {comments.map((comment) => (
+              <CommentItem 
+                key={comment.id} 
+                comment={comment} 
+                onTimeClick={onTimeClick}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

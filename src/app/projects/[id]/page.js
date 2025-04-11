@@ -154,7 +154,7 @@ export default function ProjectPage({ params }) {
                 className="flex items-center gap-2 px-4 py-2 bg-[#1F1F1F] text-[#6B7280] rounded hover:bg-[#2E2E2E] transition-colors"
               >
                 <FolderIcon className="w-5 h-5 text-[#D00102]" />
-                Nova Pasta
+                New Folder
               </button>
             </div>
 

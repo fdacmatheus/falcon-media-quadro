@@ -16,93 +16,70 @@ function VideoPlayerPageContent() {
   const [videoVersions, setVideoVersions] = useState([]);
   const [currentVideoUrl, setCurrentVideoUrl] = useState(null);
   const [videoData, setVideoData] = useState(null);
+  const [activeVersion, setActiveVersion] = useState(null);
 
   // Obter IDs da URL
   const projectId = searchParams.get('projectId');
   const folderId = searchParams.get('folderId');
   const videoId = searchParams.get('videoId');
 
-  // Carregar comentários iniciais
-  useEffect(() => {
-    const fetchComments = async () => {
-      if (!videoId || !projectId || !folderId) return;
-      
-      console.log('Buscando comentários para vídeo:', videoId);
-      try {
-        const response = await fetch(
-          `/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`
-        );
-        
-        if (!response.ok) {
-          throw new Error('Falha ao buscar comentários');
-        }
-        
-        const fetchedComments = await response.json();
-        console.log(`Foram carregados ${fetchedComments.length} comentários`);
-        
-        // Processar os comentários para garantir compatibilidade
-        const processedComments = fetchedComments.map(comment => {
-          console.log('Processando comentário com ID:', comment.id);
-          
-          // Verificar se temos dados de desenho e processá-los
-          let drawingData = null;
-          
-          if (comment.drawing_data) {
-            try {
-              // Tentar fazer parse do JSON
-              const drawingObj = JSON.parse(comment.drawing_data);
-              console.log('Drawing data parseado com sucesso');
-              
-              // Armazenar no objeto 'drawing' para compatibilidade
-              drawingData = drawingObj;
-            } catch (e) {
-              console.error('Erro ao processar drawing_data:', e);
-              // Talvez seja uma string direta
-              if (typeof comment.drawing_data === 'string' && comment.drawing_data.startsWith('data:')) {
-                drawingData = {
-                  imageData: comment.drawing_data,
-                  timestamp: parseFloat(comment.video_time || 0)
-                };
-              }
-            }
-          }
-          
-          // Garantir que temos videoTime como número
-          const videoTime = parseFloat(comment.video_time || comment.videoTime || 0);
-          
-          // Log para debug
-          console.log(`Comentário ${comment.id}:`, {
-            videoTime,
-            hasDrawing: !!drawingData,
-            drawingTimestamp: drawingData?.timestamp
-          });
-          
-          return {
-            ...comment,
-            videoTime,
-            drawing: drawingData,
-            // Outros campos para garantir compatibilidade
-            author: comment.user_name || comment.author || 'Anônimo',
-            timestamp: comment.created_at || comment.timestamp,
-            likes: parseInt(comment.likes) || 0,
-            likedBy: comment.liked_by ? 
-              (typeof comment.liked_by === 'string' ? JSON.parse(comment.liked_by) : comment.liked_by) : 
-              (comment.likedBy || []),
-            replies: comment.replies || [],
-            resolved: Boolean(comment.resolved)
-          };
-        });
-        
-        console.log('Comentários processados com sucesso');
-        setComments(processedComments);
-      } catch (error) {
-        console.error('Erro ao buscar comentários:', error);
-        toast.error('Erro ao carregar comentários');
-      }
-    };
+  // Função para carregar comentários
+  const loadComments = async (versionId = null) => {
+    if (!videoId || !projectId || !folderId) {
+      console.error('Um ou mais parâmetros obrigatórios estão faltando:', { videoId, projectId, folderId });
+      return;
+    }
     
+    console.log('Buscando comentários para:', { videoId, versionId: versionId || 'todos' });
+    try {
+      let url = `/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/comments`;
+      
+      // Se tiver uma versão específica, adicionar como query parameter
+      if (versionId) {
+        url += `?versionId=${versionId}`;
+      }
+      
+      console.log('URL da requisição de comentários:', url);
+      
+      const response = await fetch(url, {
+        // Adicionar cabeçalho de cache para evitar resultados em cache
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Falha ao buscar comentários');
+      }
+      
+      const fetchedComments = await response.json();
+      console.log(`Foram carregados ${fetchedComments.length} comentários ${versionId ? 'para a versão selecionada' : ''}`);
+      
+      // Log para debug - mostrar IDs e version_ids
+      if (fetchedComments.length > 0) {
+        console.log('Amostra de comentários carregados:');
+        fetchedComments.slice(0, 3).forEach(c => {
+          console.log(`- Comentário ID: ${c.id}, version_id: ${c.version_id || 'NULL'}, texto: ${c.text ? c.text.substring(0, 30) : 'sem texto'}`);
+        });
+      }
+
+      // Processar e atualizar comentários
+      setComments(fetchedComments);
+      
+      return fetchedComments;
+    } catch (error) {
+      console.error('Erro ao carregar comentários:', error);
+      toast.error('Erro ao carregar comentários');
+      return [];
+    }
+  };
+  
+  // Carregar comentários iniciais (todos)
+  useEffect(() => {
     if (videoId) {
-      fetchComments();
+      loadComments();
     }
   }, [videoId, projectId, folderId]);
 
@@ -117,7 +94,24 @@ function VideoPlayerPageContent() {
         if (response.ok) {
           const videoData = await response.json();
           setVideoData(videoData);
-          setCurrentVideoUrl(videoData.file_path);
+          
+          // Verificar e ajustar URL para caminho absoluto se necessário
+          let videoPath = videoData.file_path;
+          
+          // Remover prefixo '/api/videos/' se presente
+          if (videoPath.startsWith('/api/videos/')) {
+            videoPath = videoPath.replace('/api/videos/', '/');
+            console.log('Removido prefixo incorreto de URL:', videoPath);
+          }
+          
+          // Garantir que a URL começa com '/'
+          if (!videoPath.startsWith('http') && !videoPath.startsWith('/')) {
+            videoPath = '/' + videoPath;
+            console.log('Convertendo URL do vídeo principal para caminho absoluto:', videoPath);
+          }
+          
+          console.log('URL final de vídeo principal:', videoPath);
+          setCurrentVideoUrl(videoPath);
         } else {
           toast.error('Erro ao carregar vídeo');
         }
@@ -126,7 +120,28 @@ function VideoPlayerPageContent() {
         const versionsResponse = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/versions`);
         if (versionsResponse.ok) {
           const versionsData = await versionsResponse.json();
-          setVideoVersions(versionsData);
+          
+          // Ajustar caminhos de arquivo para absolutos, se necessário
+          const processedVersions = versionsData.map(version => {
+            let videoPath = version.file_path;
+            
+            // Remover prefixo '/api/videos/' se presente
+            if (videoPath && videoPath.startsWith('/api/videos/')) {
+              videoPath = videoPath.replace('/api/videos/', '/');
+              console.log('Removido prefixo incorreto de URL de versão:', videoPath);
+            }
+            
+            // Garantir que a URL começa com '/'
+            if (videoPath && !videoPath.startsWith('http') && !videoPath.startsWith('/')) {
+              videoPath = '/' + videoPath;
+              console.log('Convertendo URL de versão para caminho absoluto:', videoPath);
+            }
+            
+            version.file_path = videoPath;
+            return version;
+          });
+          
+          setVideoVersions(processedVersions);
         }
       } catch (error) {
         console.error('Erro ao carregar dados do vídeo:', error);
@@ -158,25 +173,64 @@ function VideoPlayerPageContent() {
   }, []);
 
   const handleDrawingSave = (imageData) => {
-    console.log('Drawing saved in VideoPlayerPage, data received:', 
-      imageData ? `Present (length: ${imageData.length})` : 'Not present');
-    
-    // Garantir que temos dados válidos
-    if (typeof imageData === 'string' && imageData.length > 0) {
-      console.log('Setting valid tempDrawing in VideoPlayerPage');
-      setTempDrawing(imageData);
-    } else {
-      console.warn('Invalid drawing data received in VideoPlayerPage');
-      // Definir um valor fallback válido
-      const fallbackDrawing = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
-      setTempDrawing(fallbackDrawing);
-    }
+    console.log('Drawing saved in video-player page, data length:', imageData ? imageData.length : 0);
+    setTempDrawing(imageData);
   };
 
   const handleVersionCreated = (newVersion) => {
     // Atualizar a lista de versões
     setVideoVersions(prev => [newVersion, ...prev]);
     toast.success('Nova versão adicionada com sucesso!');
+  };
+
+  const handleVersionChange = (version) => {
+    console.log('Mudando para versão:', version);
+    
+    // Atualizar a versão ativa
+    setActiveVersion(version);
+    
+    // Garantir que temos um caminho válido para o vídeo
+    if (version && version.file_path) {
+      let videoPath = version.file_path;
+      
+      // Remover prefixo '/api/videos/' se presente
+      if (videoPath.startsWith('/api/videos/')) {
+        videoPath = videoPath.replace('/api/videos/', '/');
+        console.log('Removido prefixo incorreto da URL de versão:', videoPath);
+      }
+      
+      // Verificar se a URL já é absoluta, se não, torná-la absoluta
+      if (!videoPath.startsWith('http') && !videoPath.startsWith('/')) {
+        videoPath = '/' + videoPath;
+        console.log('Convertendo para caminho absoluto:', videoPath);
+      }
+      
+      console.log('URL final da versão:', videoPath);
+      setCurrentVideoUrl(videoPath);
+    } else {
+      console.error('Versão selecionada não tem file_path válido:', version);
+    }
+    
+    // Limpar os comentários atuais para evitar que apareçam comentários de outras versões
+    setComments([]);
+    console.log('Comentários limpos para evitar exibição incorreta durante a transição');
+    
+    // Carregar comentários específicos para esta versão
+    // (apenas comentários da versão específica)
+    console.log('Carregando comentários para versão específica:', version.id);
+    loadComments(version.id);
+    
+    // Adiar a atualização para garantir que o DOM seja atualizado
+    setTimeout(() => {
+      if (videoRef.current) {
+        console.log('Atualizando elemento de vídeo com nova URL');
+        // Forçar a recarga do vídeo
+        videoRef.current.load();
+      }
+    }, 100);
+    
+    // Notificar usuário
+    toast.success(`Alterado para ${version.file_path.split('/').pop()}`);
   };
 
   const handleNewComment = async (comment) => {
@@ -218,6 +272,12 @@ function VideoPlayerPageContent() {
         video_id: videoId,
         drawing_data: comment.drawing ? JSON.stringify(comment.drawing) : null
       };
+      
+      // Adicionar version_id ao comentário se houver uma versão ativa
+      if (activeVersion) {
+        requestBody.version_id = activeVersion.id;
+        console.log('Adicionando comentário à versão específica:', activeVersion.id);
+      }
       
       console.log('Request body:', requestBody);
       
@@ -267,6 +327,7 @@ function VideoPlayerPageContent() {
         setComments(prevComments => [formattedComment, ...prevComments]);
         setTempDrawing(null);
         toast.success('Comentário enviado com sucesso!');
+
         return formattedComment;
       } catch (fetchError) {
         if (fetchError.name === 'AbortError') {
@@ -282,40 +343,49 @@ function VideoPlayerPageContent() {
     }
   };
 
-  const handleVersionChange = (version) => {
-    console.log('Trocando para versão:', version);
-    // Atualiza a URL do vídeo que está sendo reproduzido
-    setCurrentVideoUrl(version.file_path);
-  };
-
   if (!projectId || !folderId || !videoId) {
     return <div className="text-white p-4">IDs necessários não fornecidos na URL</div>;
   }
 
   return (
-    <main className="min-h-screen bg-black">
-      <div className="container mx-auto px-4 py-8">
-        <VideoPlayer 
-          ref={videoRef}
-          videoUrl={currentVideoUrl}
-          onLogin={handleLogin} 
-          onTimeUpdate={handleTimeUpdate}
-          comments={comments}
-          onDrawingSave={handleDrawingSave}
-          fullWidth
-          projectId={projectId}
-          folderId={folderId}
-          videoId={videoId}
-          onVersionCreated={handleVersionCreated}
-          versions={videoVersions}
-          onVersionChange={handleVersionChange}
-        />
-        <div className="mt-4 bg-[#1F1F1F] rounded-lg overflow-hidden">
+    <div className="flex flex-col h-screen">
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          {currentVideoUrl && (
+            <VideoPlayer
+              ref={videoRef}
+              key={currentVideoUrl}
+              videoUrl={currentVideoUrl}
+              comments={comments}
+              onDrawingSave={handleDrawingSave}
+              tempDrawing={tempDrawing}
+              projectId={projectId}
+              folderId={folderId}
+              videoId={videoId}
+              onTimeUpdate={setCurrentTime}
+              userData={user}
+              onVersionChange={handleVersionChange}
+              initialTime={0}
+              isPlaying={false}
+              versions={videoVersions}
+              onVersionCreated={handleVersionCreated}
+              initialStatus={videoData?.status || 'new'}
+              onStatusChange={handleUpdateStatus}
+              onBack={handleBackClick}
+            />
+          )}
+        </div>
+        
+        {/* Componente de Comentários */}
+        <div className="w-96 bg-[#121212] overflow-auto border-l border-[#3F3F3F]">
           <Comments 
             user={user} 
             currentTime={currentTime}
-            onTimeClick={handleSeekToTime}
-            onNewComment={handleNewComment}
+            onTimeClick={(time) => {
+              if (videoRef.current) {
+                videoRef.current.currentTime = time;
+              }
+            }}
             comments={comments}
             setComments={setComments}
             tempDrawing={tempDrawing}
@@ -327,10 +397,11 @@ function VideoPlayerPageContent() {
             projectId={projectId}
             folderId={folderId}
             onCommentSubmit={handleNewComment}
+            activeVersion={activeVersion}
           />
         </div>
       </div>
-    </main>
+    </div>
   );
 }
 

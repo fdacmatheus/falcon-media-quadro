@@ -72,12 +72,14 @@ CREATE TABLE IF NOT EXISTS comments (
     likes INTEGER DEFAULT 0,
     liked_by TEXT,
     resolved INTEGER DEFAULT 0,
+    version_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE,
     FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
-    FOREIGN KEY (parent_id) REFERENCES comments(id) ON DELETE CASCADE
+    FOREIGN KEY (parent_id) REFERENCES comments(id) ON DELETE CASCADE,
+    FOREIGN KEY (version_id) REFERENCES video_versions(id) ON DELETE CASCADE
 );
 
 -- Criar índices para melhor performance
@@ -93,6 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_video_versions_project_id ON video_versions(proje
 CREATE INDEX IF NOT EXISTS idx_video_versions_folder_id ON video_versions(folder_id);
 CREATE INDEX IF NOT EXISTS idx_video_versions_video_id ON video_versions(video_id);
 CREATE INDEX IF NOT EXISTS idx_video_versions_source_video_id ON video_versions(source_video_id);
+CREATE INDEX IF NOT EXISTS idx_comments_version_id ON comments(version_id);
 
 -- Criar trigger para atualizar o updated_at
 CREATE TRIGGER IF NOT EXISTS update_projects_updated_at
