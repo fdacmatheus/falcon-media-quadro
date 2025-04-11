@@ -265,9 +265,23 @@ const VideoPlayer = forwardRef(({
     // Save current playback position
     const currentPosition = videoRef.current?.currentTime || 0;
     
-    // Update video URL
-    console.log('Setting currentVideoUrl to:', version.file_path);
-    setCurrentVideoUrl(version.file_path);
+    // Corrigir URL do vídeo
+    let videoPath = version.file_path;
+    
+    // Remover prefixo '/api/videos/' se estiver presente
+    if (videoPath.startsWith('/api/videos/')) {
+      videoPath = videoPath.replace('/api/videos/', '/');
+      console.log('Removido prefixo incorreto da URL de versão:', videoPath);
+    }
+    
+    // Verificar se a URL já é absoluta, se não, torná-la absoluta
+    if (!videoPath.startsWith('http') && !videoPath.startsWith('/')) {
+      videoPath = '/' + videoPath;
+      console.log('Convertendo para caminho absoluto:', videoPath);
+    }
+    
+    console.log('URL final da versão após processamento:', videoPath);
+    setCurrentVideoUrl(videoPath);
     setActiveVersion(version);
     
     // Expor a versão ativa através do videoRef para que o componente pai possa acessá-la
@@ -735,8 +749,7 @@ const VideoPlayer = forwardRef(({
           }`}>
             <video
               ref={videoRef}
-              className="w-full h-full object-contain"
-              controls={false}
+              className={`w-full h-full object-contain ${isDrawing ? 'cursor-crosshair' : 'cursor-pointer'}`}
               onTimeUpdate={handleTimeUpdate}
               onEnded={handleVideoEnd}
               onLoadedMetadata={handleLoadedMetadata}
@@ -750,9 +763,24 @@ const VideoPlayer = forwardRef(({
               }}
             >
               <source 
-                src={currentVideoUrl && !currentVideoUrl.startsWith('http') && !currentVideoUrl.startsWith('/') 
-                  ? '/' + currentVideoUrl 
-                  : currentVideoUrl} 
+                src={(() => {
+                  // Processar URL para garantir que esteja correta
+                  let url = currentVideoUrl;
+                  
+                  // Remover prefixo incorreto se presente
+                  if (url && url.startsWith('/api/videos/')) {
+                    url = url.replace('/api/videos/', '/');
+                    console.log('Prefixo incorreto removido do URL do vídeo:', url);
+                  }
+                  
+                  // Garantir que é um caminho absoluto
+                  if (url && !url.startsWith('http') && !url.startsWith('/')) {
+                    url = '/' + url;
+                  }
+                  
+                  console.log('URL final processada para source:', url);
+                  return url;
+                })()} 
                 type="video/mp4" 
               />
               Seu navegador não suporta vídeos.

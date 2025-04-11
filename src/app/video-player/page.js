@@ -83,6 +83,49 @@ function VideoPlayerPageContent() {
     }
   }, [videoId, projectId, folderId]);
 
+  // Função para carregar vídeo
+  const loadVideo = async () => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}`);
+      if (!response.ok) {
+        throw new Error('Falha ao buscar vídeo');
+      }
+      
+      const video = await response.json();
+      
+      if (!video || !video.file_path) {
+        throw new Error('Video não encontrado ou sem file_path');
+      }
+      
+      // Processar o caminho do arquivo para corrigir a URL
+      let videoPath = video.file_path;
+      
+      // Remover o prefixo /api/videos/ se estiver presente
+      if (videoPath.startsWith('/api/videos/')) {
+        videoPath = videoPath.replace('/api/videos/', '/');
+        console.log('Removido prefixo incorreto da URL do vídeo:', videoPath);
+      }
+      
+      // Garantir que a URL seja absoluta
+      if (!videoPath.startsWith('http') && !videoPath.startsWith('/')) {
+        videoPath = '/' + videoPath;
+        console.log('Convertendo para caminho absoluto:', videoPath);
+      }
+      
+      console.log('URL final do vídeo após processamento:', videoPath);
+      setCurrentVideoUrl(videoPath);
+      
+      // Carregar comentários para o vídeo
+      loadComments();
+      
+      return video;
+    } catch (error) {
+      console.error('Erro ao carregar vídeo:', error);
+      toast.error('Erro ao carregar vídeo');
+      return null;
+    }
+  };
+
   // Carregar dados do vídeo e versões
   useEffect(() => {
     const loadVideoData = async () => {
@@ -90,58 +133,37 @@ function VideoPlayerPageContent() {
 
       try {
         // Buscar dados do vídeo
-        const response = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}`);
-        if (response.ok) {
-          const videoData = await response.json();
-          setVideoData(videoData);
+        const video = await loadVideo();
+        if (video) {
+          setVideoData(video);
           
-          // Verificar e ajustar URL para caminho absoluto se necessário
-          let videoPath = videoData.file_path;
-          
-          // Remover prefixo '/api/videos/' se presente
-          if (videoPath.startsWith('/api/videos/')) {
-            videoPath = videoPath.replace('/api/videos/', '/');
-            console.log('Removido prefixo incorreto de URL:', videoPath);
+          // Buscar versões do vídeo
+          const versionsResponse = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/versions`);
+          if (versionsResponse.ok) {
+            const versionsData = await versionsResponse.json();
+            
+            // Ajustar caminhos de arquivo para absolutos, se necessário
+            const processedVersions = versionsData.map(version => {
+              let videoPath = version.file_path;
+              
+              // Remover prefixo '/api/videos/' se presente
+              if (videoPath && videoPath.startsWith('/api/videos/')) {
+                videoPath = videoPath.replace('/api/videos/', '/');
+                console.log('Removido prefixo incorreto de URL de versão:', videoPath);
+              }
+              
+              // Garantir que a URL começa com '/'
+              if (videoPath && !videoPath.startsWith('http') && !videoPath.startsWith('/')) {
+                videoPath = '/' + videoPath;
+                console.log('Convertendo URL de versão para caminho absoluto:', videoPath);
+              }
+              
+              version.file_path = videoPath;
+              return version;
+            });
+            
+            setVideoVersions(processedVersions);
           }
-          
-          // Garantir que a URL começa com '/'
-          if (!videoPath.startsWith('http') && !videoPath.startsWith('/')) {
-            videoPath = '/' + videoPath;
-            console.log('Convertendo URL do vídeo principal para caminho absoluto:', videoPath);
-          }
-          
-          console.log('URL final de vídeo principal:', videoPath);
-          setCurrentVideoUrl(videoPath);
-        } else {
-          toast.error('Erro ao carregar vídeo');
-        }
-
-        // Buscar versões do vídeo
-        const versionsResponse = await fetch(`/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/versions`);
-        if (versionsResponse.ok) {
-          const versionsData = await versionsResponse.json();
-          
-          // Ajustar caminhos de arquivo para absolutos, se necessário
-          const processedVersions = versionsData.map(version => {
-            let videoPath = version.file_path;
-            
-            // Remover prefixo '/api/videos/' se presente
-            if (videoPath && videoPath.startsWith('/api/videos/')) {
-              videoPath = videoPath.replace('/api/videos/', '/');
-              console.log('Removido prefixo incorreto de URL de versão:', videoPath);
-            }
-            
-            // Garantir que a URL começa com '/'
-            if (videoPath && !videoPath.startsWith('http') && !videoPath.startsWith('/')) {
-              videoPath = '/' + videoPath;
-              console.log('Convertendo URL de versão para caminho absoluto:', videoPath);
-            }
-            
-            version.file_path = videoPath;
-            return version;
-          });
-          
-          setVideoVersions(processedVersions);
         }
       } catch (error) {
         console.error('Erro ao carregar dados do vídeo:', error);
