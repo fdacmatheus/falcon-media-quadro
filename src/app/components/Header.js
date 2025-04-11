@@ -111,25 +111,6 @@ const Header = ({
     }
   };
 
-  const handleCompareClick = () => {
-    console.log('Header: Iniciando modo de comparação de versões');
-    
-    // Verificar se há versões suficientes para comparar
-    if (!versions || versions.length === 0) {
-      toast.error('Não há versões para comparar');
-      return;
-    }
-    
-    // Notificar o usuário que estamos entrando no modo de comparação
-    toast.success('Iniciando modo de comparação de versões', {
-      icon: '🔄',
-      duration: 3000
-    });
-    
-    // Chamar o callback para entrar no modo de comparação
-    onCompareClick();
-  };
-
   return (
     <div className="w-full bg-[#1F1F1F] px-4 py-3 flex items-center justify-between">
       <div className="flex items-center gap-2">
@@ -180,7 +161,7 @@ const Header = ({
         </div>
         {versions.length > 0 && (
           <button
-            onClick={handleCompareClick}
+            onClick={onCompareClick}
             className="flex items-center gap-2 px-3 py-1.5 bg-[#2E2E2E] rounded-md text-white hover:bg-[#3F3F3F] transition-colors text-sm"
           >
             <ArrowsRightLeftIcon className="w-4 h-4" />

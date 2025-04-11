@@ -667,35 +667,11 @@ const VideoPlayer = forwardRef(({
       <ComparisonMode
         onExit={handleExitComparison}
         userData={localUserData}
-        initialLeftUrl={currentVideoUrl}
+        initialLeftUrl={videoUrl}
         initialRightUrl={videoVersions.length > 0 ? videoVersions[0].file_path : ''}
         versions={[
-          // Incluir o vídeo original como uma versão
-          { 
-            id: 'original', 
-            file_path: currentVideoUrl, 
-            name: 'Original', 
-            created_at: new Date().toISOString(),
-            // Adicionar campos extras para garantir compatibilidade
-            author: localUserData?.name || 'Usuário',
-            label: 'Original'
-          },
-          // Garantir que todas as versões têm o campo file_path correto
-          ...videoVersions.map(version => {
-            // Criar uma cópia da versão para não modificar o original
-            const processedVersion = { ...version };
-            
-            // Garantir que a propriedade file_path está presente e formatada corretamente
-            if (processedVersion.file_path) {
-              // Verificar e ajustar o caminho se necessário
-              if (processedVersion.file_path.startsWith('/api/videos/')) {
-                processedVersion.file_path = processedVersion.file_path.replace('/api/videos/', '/');
-                console.log('VideoPlayer: Corrigindo URL de versão para ComparisonMode:', processedVersion.file_path);
-              }
-            }
-            
-            return processedVersion;
-          })
+          { id: 'original', file_path: videoUrl, name: 'Original', created_at: new Date().toISOString() },
+          ...videoVersions
         ]}
       />
     );
@@ -724,11 +700,11 @@ const VideoPlayer = forwardRef(({
           <div className="text-white flex items-center">
             <span className="inline-block w-3 h-3 bg-green-500 rounded-full mr-2"></span>
             <span>
-              Showing: {activeVersion.file_path ? activeVersion.file_path.split('/').pop() : 'Version ' + activeVersion.id.substring(0, 8)}
+              Exibindo: {activeVersion.file_path ? activeVersion.file_path.split('/').pop() : 'Versão ' + activeVersion.id.substring(0, 8)}
             </span>
           </div>
           <span className="text-gray-400 text-xs">
-            Created at: {new Date(activeVersion.created_at).toLocaleString()}
+            Criado em: {new Date(activeVersion.created_at).toLocaleString()}
           </span>
         </div>
       )}
