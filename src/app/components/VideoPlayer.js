@@ -653,6 +653,16 @@ const VideoPlayer = forwardRef(({
       console.log('Convertendo para URL absoluta:', absoluteUrl);
     }
     
+    // Se estamos no servidor de desenvolvimento e acessando por IP
+    if (typeof window !== 'undefined' && window.location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+      const serverURL = window.location.origin;
+      // Se a URL já estiver completa não precisamos fazer nada
+      if (!absoluteUrl.startsWith('http')) {
+        absoluteUrl = serverURL + absoluteUrl;
+        console.log('URL completa com endereço do servidor:', absoluteUrl);
+      }
+    }
+    
     // Cada vez que a URL do vídeo muda, garantir que o elemento de vídeo seja atualizado
     if (videoRef.current && absoluteUrl) {
       const video = videoRef.current;
@@ -758,7 +768,8 @@ const VideoPlayer = forwardRef(({
               playsInline
               key={currentVideoUrl}
               onError={(e) => {
-                console.error('Erro ao carregar vídeo:', e.target.error, 'URL:', currentVideoUrl);
+                const errorMessage = e.target.error ? e.target.error.message : 'Erro desconhecido';
+                console.error('Erro ao carregar vídeo:', errorMessage, 'URL:', currentVideoUrl);
                 toast.error('Erro ao carregar o vídeo. Verifique o URL ou tente novamente.');
               }}
             >
@@ -776,6 +787,16 @@ const VideoPlayer = forwardRef(({
                   // Garantir que é um caminho absoluto
                   if (url && !url.startsWith('http') && !url.startsWith('/')) {
                     url = '/' + url;
+                  }
+                  
+                  // Se estamos no servidor de desenvolvimento e acessando por IP
+                  if (typeof window !== 'undefined' && window.location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+                    const serverURL = window.location.origin;
+                    // Se a URL já estiver completa não precisamos fazer nada
+                    if (!url.startsWith('http')) {
+                      url = serverURL + url;
+                      console.log('URL completa com endereço do servidor:', url);
+                    }
                   }
                   
                   console.log('URL final processada para source:', url);

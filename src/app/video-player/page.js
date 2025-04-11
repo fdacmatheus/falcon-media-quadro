@@ -112,6 +112,15 @@ function VideoPlayerPageContent() {
         console.log('Convertendo para caminho absoluto:', videoPath);
       }
       
+      // Se estamos acessando por IP, adicionar URL completa
+      if (typeof window !== 'undefined' && window.location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+        const serverURL = window.location.origin;
+        if (!videoPath.startsWith('http')) {
+          videoPath = serverURL + videoPath;
+          console.log('URL completa com endereço do servidor:', videoPath);
+        }
+      }
+      
       console.log('URL final do vídeo após processamento:', videoPath);
       setCurrentVideoUrl(videoPath);
       
@@ -225,6 +234,15 @@ function VideoPlayerPageContent() {
       if (!videoPath.startsWith('http') && !videoPath.startsWith('/')) {
         videoPath = '/' + videoPath;
         console.log('Convertendo para caminho absoluto:', videoPath);
+      }
+      
+      // Se estamos acessando por IP, adicionar URL completa
+      if (typeof window !== 'undefined' && window.location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+        const serverURL = window.location.origin;
+        if (!videoPath.startsWith('http')) {
+          videoPath = serverURL + videoPath;
+          console.log('URL completa com endereço do servidor:', videoPath);
+        }
       }
       
       console.log('URL final da versão:', videoPath);
