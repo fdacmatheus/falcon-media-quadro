@@ -118,16 +118,37 @@ const VideoPlayer = forwardRef(({
 
   useEffect(() => {
     const fetchVersions = async () => {
-      if (!videoId) return;
+      if (!videoId || !projectId || !folderId) {
+        console.log('Faltam IDs necessários para buscar versões:', { projectId, folderId, videoId });
+        return;
+      }
+      
       try {
+        console.log('Buscando versões para o vídeo:', videoId);
         const response = await fetch(
           `/api/projects/${projectId}/folders/${folderId}/videos/${videoId}/versions`
         );
-        if (!response.ok) throw new Error('Falha ao buscar versões');
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Falha ao buscar versões');
+        }
+        
         const data = await response.json();
-        setVideoVersions(data);
+        console.log('Versões carregadas:', data);
+        
+        // Garantir que todas as versões tenham URLs válidas
+        const versionsWithUrls = data.map(version => ({
+          ...version,
+          file_path: version.file_path.startsWith('/api/') 
+            ? version.file_path 
+            : `/api/videos/${version.file_path}`
+        }));
+        
+        setVideoVersions(versionsWithUrls);
       } catch (error) {
         console.error('Erro ao buscar versões:', error);
+        toast.error('Erro ao carregar versões do vídeo');
       }
     };
 
@@ -438,6 +459,17 @@ const VideoPlayer = forwardRef(({
   };
 
   const handleCompareClick = () => {
+    if (!videoVersions.length) {
+      toast.error('Não há versões disponíveis para comparação');
+      return;
+    }
+
+    console.log('Iniciando modo de comparação com:', {
+      videoUrl,
+      versionsCount: videoVersions.length,
+      firstVersionUrl: videoVersions[0]?.file_path
+    });
+
     setShowComparison(true);
   };
 
@@ -687,16 +719,34 @@ const VideoPlayer = forwardRef(({
   }, [currentVideoUrl]);
 
   if (showComparison) {
+    // Garantir que temos a versão original e todas as outras versões
+    const allVersions = [
+      { 
+        id: 'original', 
+        label: 'Original',
+        file_path: videoUrl,
+        author: 'Original',
+        date: new Date().toLocaleString(),
+        duration: duration ? formatTime(duration) : '00:00'
+      },
+      ...videoVersions.map(v => ({
+        ...v,
+        label: `V${v.id.substring(0, 8)}`,
+        author: v.author || 'Unknown',
+        date: new Date(v.created_at).toLocaleString(),
+        duration: v.duration ? formatTime(v.duration) : '00:00'
+      }))
+    ];
+
+    console.log('Renderizando ComparisonMode com versões:', allVersions);
+
     return (
       <ComparisonMode
         onExit={handleExitComparison}
         userData={localUserData}
         initialLeftUrl={videoUrl}
-        initialRightUrl={videoVersions.length > 0 ? videoVersions[0].file_path : ''}
-        versions={[
-          { id: 'original', file_path: videoUrl, name: 'Original', created_at: new Date().toISOString() },
-          ...videoVersions
-        ]}
+        initialRightUrl={videoVersions[0]?.file_path || ''}
+        versions={allVersions}
       />
     );
   }

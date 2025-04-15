@@ -119,18 +119,23 @@ export default function FolderContent({ projectId, folderId }) {
       toast.success('Video uploaded successfully!');
 
       // Start polling to check processing status
-      const checkProcessingStatus = async () => {
+      const checkProcessingStatus = async (retryCount = 0) => {
         try {
           const statusResponse = await fetch(
             `/api/projects/${projectId}/folders/${folderId}/videos/${data.id}/status`
           );
           
           if (!statusResponse.ok) {
-            throw new Error('Error checking processing status');
+            const errorData = await statusResponse.text();
+            throw new Error(`Erro ao verificar status de processamento: ${statusResponse.status} - ${errorData}`);
           }
 
           const statusData = await statusResponse.json();
           
+          if (!statusData) {
+            throw new Error('Resposta de status inválida');
+          }
+
           // Update video in list with new status
           setVideos(prevVideos =>
             prevVideos.map(video =>
@@ -140,12 +145,20 @@ export default function FolderContent({ projectId, folderId }) {
             )
           );
 
-          // If still processing, keep checking
-          if (statusData.processing) {
-            setTimeout(checkProcessingStatus, 5000); // Check every 5 seconds
+          // If still processing, keep checking (with max retries)
+          if (statusData.processing && retryCount < 60) { // 5 minutos máximo (60 * 5 segundos)
+            setTimeout(() => checkProcessingStatus(retryCount + 1), 5000);
+          } else if (retryCount >= 60) {
+            console.warn('Tempo máximo de processamento atingido');
+            toast.warning('O processamento está demorando mais que o esperado');
           }
         } catch (error) {
-          console.error('Error checking status:', error);
+          console.error('Erro ao verificar status:', error);
+          if (retryCount < 3) { // Tenta novamente até 3 vezes em caso de erro
+            setTimeout(() => checkProcessingStatus(retryCount + 1), 5000);
+          } else {
+            toast.error('Falha ao verificar status do processamento');
+          }
         }
       };
 
