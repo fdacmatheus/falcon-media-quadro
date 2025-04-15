@@ -470,6 +470,52 @@ const VideoPlayer = forwardRef(({
       firstVersionUrl: videoVersions[0]?.file_path
     });
 
+    // Garantir que todas as versões tenham URLs válidas
+    const processedVersions = videoVersions.map(version => {
+      let processedUrl = version.file_path;
+      
+      // Remover prefixo /api/videos/ se presente
+      if (processedUrl.startsWith('/api/videos/')) {
+        processedUrl = processedUrl.replace('/api/videos/', '/');
+      }
+      
+      // Garantir que é um caminho absoluto
+      if (!processedUrl.startsWith('http') && !processedUrl.startsWith('/')) {
+        processedUrl = '/' + processedUrl;
+      }
+
+      return {
+        ...version,
+        file_path: processedUrl,
+        label: `V${version.id.substring(0, 8)}`,
+        author: version.author || 'Unknown',
+        date: new Date(version.created_at).toLocaleString(),
+        duration: version.duration ? formatTime(version.duration) : '00:00'
+      };
+    });
+
+    // Processar URL do vídeo original
+    let originalUrl = videoUrl;
+    if (originalUrl.startsWith('/api/videos/')) {
+      originalUrl = originalUrl.replace('/api/videos/', '/');
+    }
+    if (!originalUrl.startsWith('http') && !originalUrl.startsWith('/')) {
+      originalUrl = '/' + originalUrl;
+    }
+
+    const allVersions = [
+      { 
+        id: 'original', 
+        label: 'Original',
+        file_path: originalUrl,
+        author: 'Original',
+        date: new Date().toLocaleString(),
+        duration: duration ? formatTime(duration) : '00:00'
+      },
+      ...processedVersions
+    ];
+
+    console.log('Versões processadas para comparação:', allVersions);
     setShowComparison(true);
   };
 
@@ -718,8 +764,68 @@ const VideoPlayer = forwardRef(({
     }
   }, [currentVideoUrl]);
 
+  const loadCommentsForVersion = async (versionId) => {
+    if (!selectedVideo?.id) {
+      console.error('Não foi possível carregar comentários: vídeo não selecionado');
+      return;
+    }
+    
+    try {
+      console.log('Carregando comentários para versão:', versionId);
+      // Limpar comentários atuais enquanto carrega novos
+      setComments([]); 
+      
+      let url = `/api/projects/${projectId}/folders/${folderId}/videos/${selectedVideo.id}/comments`;
+      if (versionId) {
+        url += `?versionId=${versionId}`;
+      }
+      
+      console.log('URL da requisição de comentários:', url);
+      
+      const response = await fetch(url, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.details || `Erro ${response.status} ao carregar comentários`);
+      }
+      
+      const data = await response.json();
+      console.log(`${data.length} comentários carregados para versão ${versionId || 'original'}`);
+      
+      // Processar os comentários recebidos
+      const processedComments = data.map(comment => ({
+        ...comment,
+        videoTime: parseFloat(comment.video_time || 0) || 0,
+        author: comment.user_name || 'Anônimo',
+        email: comment.user_email || 'anonymous@example.com',
+        timestamp: comment.created_at,
+        likes: parseInt(comment.likes) || 0,
+        likedBy: comment.liked_by ? JSON.parse(comment.liked_by) : [],
+        replies: [],
+        resolved: Boolean(comment.resolved),
+        drawing: comment.drawing_data ? JSON.parse(comment.drawing_data) : null
+      }));
+      
+      // Verificar se a versão ativa ainda é a mesma
+      if ((!versionId && !activeVersion) || (activeVersion && versionId === activeVersion.id)) {
+        console.log('Atualizando comentários na interface');
+        setComments(processedComments);
+      } else {
+        console.warn('Versão ativa mudou durante o carregamento, ignorando comentários');
+      }
+    } catch (error) {
+      console.error('Erro ao carregar comentários por versão:', error);
+      toast.error(`Erro ao carregar comentários: ${error.message}`);
+    }
+  };
+
   if (showComparison) {
-    // Garantir que temos a versão original e todas as outras versões
     const allVersions = [
       { 
         id: 'original', 
@@ -729,16 +835,14 @@ const VideoPlayer = forwardRef(({
         date: new Date().toLocaleString(),
         duration: duration ? formatTime(duration) : '00:00'
       },
-      ...videoVersions.map(v => ({
-        ...v,
-        label: `V${v.id.substring(0, 8)}`,
-        author: v.author || 'Unknown',
-        date: new Date(v.created_at).toLocaleString(),
-        duration: v.duration ? formatTime(v.duration) : '00:00'
+      ...videoVersions.map(version => ({
+        ...version,
+        label: `V${version.id.substring(0, 8)}`,
+        author: version.author || 'Unknown',
+        date: new Date(version.created_at).toLocaleString(),
+        duration: version.duration ? formatTime(version.duration) : '00:00'
       }))
     ];
-
-    console.log('Renderizando ComparisonMode com versões:', allVersions);
 
     return (
       <ComparisonMode

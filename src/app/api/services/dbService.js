@@ -379,13 +379,53 @@ export class DbService {
     }
   }
 
-  static async getComments(projectId, folderId, videoId) {
+  static async getComments(projectId, folderId, videoId, versionId = null) {
     try {
-      // Buscar todos os comentários do vídeo
-      const result = await query(
-        'SELECT * FROM comments WHERE project_id = ? AND folder_id = ? AND video_id = ? ORDER BY created_at ASC',
-        [projectId, folderId, videoId]
-      );
+      console.log('DbService: getComments iniciado com IDs:', { 
+        projectId, folderId, videoId, versionId: versionId || 'não especificado (todos)' 
+      });
+      
+      let sql, params;
+      
+      // Se um versionId for fornecido, incluir comentários dessa versão específica
+      // E TAMBÉM incluir comentários sem versão especificada (version_id IS NULL)
+      if (versionId) {
+        sql = `
+          SELECT * FROM comments 
+          WHERE project_id = ? 
+          AND folder_id = ? 
+          AND video_id = ? 
+          AND (version_id = ? OR version_id IS NULL)
+          ORDER BY created_at DESC
+        `;
+        params = [projectId, folderId, videoId, versionId];
+        console.log('DbService: Filtrando comentários pela versão específica E comentários sem versão');
+      } else {
+        // Sem versionId especificado, buscar todos os comentários
+        sql = `
+          SELECT * FROM comments 
+          WHERE project_id = ? 
+          AND folder_id = ? 
+          AND video_id = ?
+          ORDER BY created_at DESC
+        `;
+        params = [projectId, folderId, videoId];
+        console.log('DbService: Buscando todos os comentários (sem filtro de versão)');
+      }
+      
+      const result = await query(sql, params);
+      
+      if (!result || !result.rows) {
+        console.error('Resultado inválido da query:', result);
+        throw new Error('Erro ao executar query de comentários');
+      }
+
+      console.log(`DbService: ${result.rows.length} comentários encontrados`);
+
+      // Log detalhado dos comentários retornados
+      result.rows.forEach(comment => {
+        console.log(`Comentário ID: ${comment.id}, versão: ${comment.version_id || 'NULL'}, texto: ${comment.text?.substring(0, 30) || 'sem texto'}`);
+      });
 
       // Organizar comentários em uma estrutura hierárquica
       const comments = result.rows;
@@ -404,15 +444,19 @@ export class DbService {
           const parentComment = commentMap.get(comment.parent_id);
           if (parentComment) {
             parentComment.replies.push(comment);
+          } else {
+            console.warn('Comentário pai não encontrado:', comment.parent_id);
+            rootComments.push(comment);
           }
         } else {
           rootComments.push(comment);
         }
       });
 
+      console.log('DbService: Comentários organizados hierarquicamente');
       return rootComments;
     } catch (error) {
-      console.error('Erro ao buscar comentários:', error);
+      console.error('DbService: Erro ao buscar comentários:', error);
       throw error;
     }
   }

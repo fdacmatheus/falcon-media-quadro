@@ -50,8 +50,50 @@ const ComparisonMode = ({
       console.error('Versão não encontrada:', versionId);
       return '';
     }
-    return version.file_path;
+
+    let url = version.file_path;
+    
+    // Garantir que a URL está formatada corretamente
+    if (!url) {
+      console.error('URL não encontrada para a versão:', versionId);
+      return '';
+    }
+
+    // Se a URL já começa com http ou /api, retornar como está
+    if (url.startsWith('http') || url.startsWith('/api/')) {
+      return url;
+    }
+
+    // Adicionar prefixo /api/videos/ se necessário
+    if (!url.startsWith('/api/videos/')) {
+      url = `/api/videos/${url}`;
+    }
+
+    console.log('URL processada para versão:', versionId, url);
+    return url;
   };
+
+  useEffect(() => {
+    if (leftVersion) {
+      const url = getVersionUrl(leftVersion);
+      console.log('Carregando vídeo esquerdo:', url);
+      if (leftVideoRef.current) {
+        leftVideoRef.current.src = url;
+        leftVideoRef.current.load();
+      }
+    }
+  }, [leftVersion]);
+
+  useEffect(() => {
+    if (rightVersion) {
+      const url = getVersionUrl(rightVersion);
+      console.log('Carregando vídeo direito:', url);
+      if (rightVideoRef.current) {
+        rightVideoRef.current.src = url;
+        rightVideoRef.current.load();
+      }
+    }
+  }, [rightVersion]);
 
   const handleLoadedMetadata = (e, isLeft) => {
     console.log(`Vídeo ${isLeft ? 'esquerdo' : 'direito'} carregado:`, e.target.duration);
@@ -135,7 +177,7 @@ const ComparisonMode = ({
             >
               {versions.map(version => (
                 <option key={version.id} value={version.id}>
-                  {version.label || version.id}
+                  {version.label || `Versão ${version.id.substring(0, 8)}`}
                 </option>
               ))}
             </select>
@@ -148,11 +190,14 @@ const ComparisonMode = ({
             <video
               ref={leftVideoRef}
               className="w-full h-full object-contain"
-              src={getVersionUrl(leftVersion)}
               onLoadedMetadata={(e) => handleLoadedMetadata(e, true)}
               onWaiting={() => setIsBuffering(true)}
               onPlaying={() => setIsBuffering(false)}
               onEnded={() => setLeftEnded(true)}
+              onError={(e) => {
+                console.error('Erro ao carregar vídeo esquerdo:', e);
+                toast.error('Erro ao carregar vídeo');
+              }}
               playsInline
               muted
             />
@@ -169,7 +214,7 @@ const ComparisonMode = ({
             >
               {versions.map(version => (
                 <option key={version.id} value={version.id}>
-                  {version.label || version.id}
+                  {version.label || `Versão ${version.id.substring(0, 8)}`}
                 </option>
               ))}
             </select>
@@ -182,11 +227,14 @@ const ComparisonMode = ({
             <video
               ref={rightVideoRef}
               className="w-full h-full object-contain"
-              src={getVersionUrl(rightVersion)}
               onLoadedMetadata={(e) => handleLoadedMetadata(e, false)}
               onWaiting={() => setIsBuffering(true)}
               onPlaying={() => setIsBuffering(false)}
               onEnded={() => setRightEnded(true)}
+              onError={(e) => {
+                console.error('Erro ao carregar vídeo direito:', e);
+                toast.error('Erro ao carregar vídeo');
+              }}
               playsInline
               muted
             />

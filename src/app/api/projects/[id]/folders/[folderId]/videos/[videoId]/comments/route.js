@@ -4,21 +4,18 @@ import { query } from '@/database/config/database'; // Importação da função 
 
 export async function GET(request, { params }) {
   try {
-    const paramsData = await params;
-    const projectId = paramsData.id;
-    const folderId = paramsData.folderId;
-    const videoId = paramsData.videoId;
-    
-    // Obter versionId da URL query se presente
+    const { id: projectId, folderId, videoId } = params;
     const { searchParams } = new URL(request.url);
     const versionId = searchParams.get('versionId');
-    
-    console.log('GET /comments - Parâmetros:', { 
-      projectId, folderId, videoId, 
-      versionId: versionId || 'não especificado (todos)' 
+
+    console.log('GET /comments - Parâmetros:', {
+      projectId,
+      folderId,
+      videoId,
+      versionId: versionId || 'não especificado'
     });
 
-    // Validate parameters
+    // Validar parâmetros obrigatórios
     if (!projectId || !folderId || !videoId) {
       console.error('Parâmetros inválidos:', { projectId, folderId, videoId });
       return NextResponse.json(
@@ -27,107 +24,49 @@ export async function GET(request, { params }) {
       );
     }
 
-    // IMPORTANTE: Para corrigir o problema, vamos fazer uma consulta SQL direta para garantir
-    // que apenas comentários da versão específica sejam retornados
-    let comments;
-    
+    let sql;
+    let queryParams;
+
     if (versionId) {
-      console.log('Filtrando APENAS comentários da versão:', versionId);
-      // Consulta SQL direta para obter apenas comentários da versão específica
-      const result = await query(
-        'SELECT * FROM comments WHERE project_id = ? AND folder_id = ? AND video_id = ? AND version_id = ? ORDER BY created_at DESC',
-        [projectId, folderId, videoId, versionId]
-      );
-      comments = result.rows;
+      // Se tem versionId, buscar comentários da versão específica E comentários sem versão
+      sql = `
+        SELECT * FROM comments 
+        WHERE project_id = ? 
+        AND folder_id = ? 
+        AND video_id = ? 
+        AND (version_id = ? OR version_id IS NULL)
+        ORDER BY created_at DESC
+      `;
+      queryParams = [projectId, folderId, videoId, versionId];
+      console.log('Filtrando comentários da versão específica E sem versão:', versionId);
     } else {
-      // Sem versão específica, usar a função normal do DbService
-      comments = await DbService.getComments(projectId, folderId, videoId);
+      // Se não tem versionId, buscar todos os comentários
+      sql = `
+        SELECT * FROM comments 
+        WHERE project_id = ? 
+        AND folder_id = ? 
+        AND video_id = ?
+        ORDER BY created_at DESC
+      `;
+      queryParams = [projectId, folderId, videoId];
+      console.log('Buscando todos os comentários do vídeo');
     }
+
+    const result = await query(sql, queryParams);
     
-    console.log('GET /comments - Total de comentários:', comments.length, versionId ? '(filtrados por versão)' : '(todos)');
-    
-    // Verificar quantos comentários têm version_id
-    const commentsWithVersionId = comments.filter(c => c.version_id).length;
-    const commentsWithoutVersionId = comments.filter(c => !c.version_id).length;
-    console.log(`GET /comments - Distribuição de comentários:
-      - ${commentsWithVersionId} comentários têm version_id definido
-      - ${commentsWithoutVersionId} comentários sem version_id (null)
-    `);
-    
-    if (versionId) {
-      console.log(`GET /comments - Verificando filtro: Comentários devem ter version_id=${versionId}`);
-      const matchingVersionComments = comments.filter(c => c.version_id === versionId).length;
-      console.log(`GET /comments - Após filtragem:
-        - ${matchingVersionComments} comentários com version_id=${versionId}
-      `);
+    if (!result || !result.rows) {
+      console.error('Resultado inválido da query:', result);
+      throw new Error('Erro ao executar query de comentários');
     }
+
+    console.log(`${result.rows.length} comentários encontrados`);
     
-    // Processar comentários para garantir que todos os campos necessários estejam presentes
-    const processedComments = comments.map(comment => {
-      // Garantir que o videoTime seja processado corretamente
-      let videoTime = 0;
-      try {
-        videoTime = parseFloat(comment.video_time || 0);
-        if (isNaN(videoTime) || !isFinite(videoTime)) {
-          console.warn('Tempo inválido para comentário:', comment.id);
-          videoTime = 0;
-        }
-      } catch (e) {
-        console.error('Erro ao processar tempo de vídeo:', e);
-        videoTime = 0;
-      }
-      
-      // Processar drawing_data e garantir que seja um objeto válido
-      let drawing = null;
-      if (comment.drawing_data) {
-        try {
-          // Tentar fazer parse do JSON
-          drawing = JSON.parse(comment.drawing_data);
-          console.log('Drawing data parseado com sucesso para comentário:', comment.id);
-          
-          // Verificar e corrigir o timestamp no desenho
-          if (drawing.timestamp !== undefined) {
-            const drawingTime = parseFloat(drawing.timestamp);
-            if (isNaN(drawingTime) || !isFinite(drawingTime)) {
-              console.warn('Timestamp inválido no desenho, usando tempo do vídeo');
-              drawing.timestamp = videoTime;
-            }
-          } else {
-            // Se não tiver timestamp, adicionar
-            drawing.timestamp = videoTime;
-          }
-          
-          // Reconverter para string
-          comment.drawing_data = JSON.stringify(drawing);
-          
-        } catch (e) {
-          console.error('Erro ao processar drawing_data:', e);
-          // Converter para formato padrão se não for um JSON válido
-          drawing = {
-            imageData: comment.drawing_data,
-            timestamp: videoTime
-          };
-          comment.drawing_data = JSON.stringify(drawing);
-        }
-      }
-      
-      // Criar campos adicionais para compatibilidade
-      return {
-        ...comment,
-        videoTime: videoTime,
-        drawing: drawing,
-        // Garantir que outros campos existam
-        author: comment.user_name || 'Anônimo',
-        email: comment.user_email || 'anonymous@example.com',
-        timestamp: comment.created_at,
-        likes: parseInt(comment.likes) || 0,
-        likedBy: comment.liked_by ? JSON.parse(comment.liked_by) : [],
-        replies: [],
-        resolved: Boolean(comment.resolved)
-      };
+    // Log detalhado dos comentários
+    result.rows.forEach(comment => {
+      console.log(`Comentário ID: ${comment.id}, versão: ${comment.version_id || 'sem versão'}, texto: ${comment.text?.substring(0, 30) || 'sem texto'}`);
     });
-    
-    return NextResponse.json(processedComments);
+
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error('Erro ao buscar comentários:', error);
     return NextResponse.json(

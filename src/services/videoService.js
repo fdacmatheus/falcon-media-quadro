@@ -126,8 +126,14 @@ export class VideoService {
     }
   }
 
-  static async getComments(projectId, folderId, videoId) {
-    return await DbService.getComments(projectId, folderId, videoId);
+  static async getComments(projectId, folderId, videoId, versionId = null) {
+    console.log('VideoService: getComments chamado com:', {
+      projectId,
+      folderId,
+      videoId,
+      versionId: versionId || 'não especificado'
+    });
+    return await DbService.getComments(projectId, folderId, videoId, versionId);
   }
 
   static async addComment(projectId, folderId, videoId, comment) {
