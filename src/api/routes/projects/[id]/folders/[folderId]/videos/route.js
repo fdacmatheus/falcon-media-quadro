@@ -72,16 +72,7 @@ export async function POST(request, { params }) {
       await mkdir(projectFolderDir, { recursive: true });
       console.log('Diretório do projeto criado:', projectFolderDir);
       
-      // Criar diretório public/uploads/videos
-      const videosDir = path.join(rootDir, 'public', 'uploads', 'videos');
-      await mkdir(videosDir, { recursive: true });
-      console.log('Diretório de vídeos criado:', videosDir);
-      
-      // Caminho completo para o arquivo na pasta public/uploads/videos
-      const videosPath = path.join(videosDir, fileName);
-      console.log('Caminho do arquivo em videos:', videosPath);
-      
-      // Caminho completo para o arquivo na pasta do projeto
+      // Definir o caminho completo para o arquivo na pasta do projeto
       const projectPath = path.join(projectFolderDir, fileName);
       console.log('Caminho do arquivo no projeto:', projectPath);
 
@@ -89,20 +80,33 @@ export async function POST(request, { params }) {
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
       
-      // Salvar o arquivo SOMENTE em public/uploads/videos
-      console.log('Tentando salvar arquivo em:', videosPath);
+      // Salvar o arquivo na pasta do projeto
+      console.log('Tentando salvar arquivo em:', projectPath);
       try {
-        await writeFile(videosPath, buffer);
-        console.log('Arquivo salvo com sucesso em:', videosPath);
+        await writeFile(projectPath, buffer);
+        console.log('Arquivo salvo com sucesso em:', projectPath);
       } catch (writeError) {
         console.error('Erro ao salvar arquivo:', writeError);
         // Tentar método síncrono como fallback
-        fs.writeFileSync(videosPath, buffer);
-        console.log('Arquivo salvo com sucesso (método síncrono) em:', videosPath);
+        fs.writeFileSync(projectPath, buffer);
+        console.log('Arquivo salvo com sucesso (método síncrono) em:', projectPath);
+      }
+      
+      // Também vamos verificar se o diretório /uploads/videos existe e criar uma cópia lá
+      try {
+        const videosDir = path.join(rootDir, 'public', 'uploads', 'videos');
+        await mkdir(videosDir, { recursive: true });
+        const videosPath = path.join(videosDir, fileName);
+        fs.copyFileSync(projectPath, videosPath);
+        console.log('Cópia do arquivo também salva em:', videosPath);
+      } catch (copyError) {
+        console.error('Erro ao criar cópia em /uploads/videos:', copyError);
+        // Continuar mesmo se a cópia falhar
       }
 
-      // Construir o caminho para ser armazenado no banco de dados
-      const dbFilePath = `/uploads/videos/${fileName}`;
+      // Construir o caminho para ser armazenado no banco de dados 
+      // que corresponda à estrutura original do projeto
+      const dbFilePath = `/uploads/${projectId}/${folderId}/${fileName}`;
       console.log('Caminho para o banco de dados:', dbFilePath);
 
       // Inserir no banco de dados
@@ -110,7 +114,7 @@ export async function POST(request, { params }) {
         projectId,
         folderId,
         file.name,
-        dbFilePath, // caminho para o banco de dados com /uploads/videos/
+        dbFilePath, // caminho para o banco de dados com a estrutura de pastas
         file.size,
         file.type,
         null // duration será atualizada posteriormente
