@@ -41,9 +41,16 @@ export async function DELETE(request, { params }) {
     
     // Verificar se o arquivo existe e remover
     if (video.file_path) {
+      // O caminho no banco começa com /uploads/videos/
+      // Precisamos remover a / inicial e juntar com public para o caminho real
       const filePath = path.join(process.cwd(), 'public', video.file_path.replace(/^\//, ''));
+      console.log('Tentando remover arquivo em:', filePath);
+      
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
+        console.log('Arquivo removido com sucesso:', filePath);
+      } else {
+        console.log('Arquivo não encontrado para remoção:', filePath);
       }
     }
     
@@ -51,9 +58,16 @@ export async function DELETE(request, { params }) {
     const versions = await DbService.getVideoVersions(videoId);
     for (const version of versions) {
       if (version.file_path) {
+        // O caminho no banco começa com /uploads/videos/
+        // Precisamos remover a / inicial e juntar com public para o caminho real
         const versionPath = path.join(process.cwd(), 'public', version.file_path.replace(/^\//, ''));
+        console.log('Tentando remover versão em:', versionPath);
+        
         if (fs.existsSync(versionPath)) {
           fs.unlinkSync(versionPath);
+          console.log('Versão removida com sucesso:', versionPath);
+        } else {
+          console.log('Versão não encontrada para remoção:', versionPath);
         }
       }
     }

@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { DbService } from '@/services';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, copyFile } from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { join } from 'path';
+import fs from 'fs';
 
 export async function GET(request, { params }) {
   try {
@@ -59,28 +60,57 @@ export async function POST(request, { params }) {
     }
 
     try {
-      // Criar diretório de uploads se não existir
-      const uploadDir = join(process.cwd(), 'public', 'uploads', projectId, folderId);
-      await mkdir(uploadDir, { recursive: true });
-
       // Gerar nome único para o arquivo
       const fileName = `${randomUUID()}-${file.name}`;
-      const filePath = path.join('uploads', projectId, folderId, fileName);
-      const fullPath = path.join(process.cwd(), 'public', filePath);
+      
+      // Definir o caminho raiz do projeto
+      const rootDir = process.cwd();
+      console.log('Diretório raiz:', rootDir);
+      
+      // Criar diretório para o projeto e pasta
+      const projectFolderDir = path.join(rootDir, 'public', 'uploads', projectId, folderId);
+      await mkdir(projectFolderDir, { recursive: true });
+      console.log('Diretório do projeto criado:', projectFolderDir);
+      
+      // Criar diretório public/uploads/videos
+      const videosDir = path.join(rootDir, 'public', 'uploads', 'videos');
+      await mkdir(videosDir, { recursive: true });
+      console.log('Diretório de vídeos criado:', videosDir);
+      
+      // Caminho completo para o arquivo na pasta public/uploads/videos
+      const videosPath = path.join(videosDir, fileName);
+      console.log('Caminho do arquivo em videos:', videosPath);
+      
+      // Caminho completo para o arquivo na pasta do projeto
+      const projectPath = path.join(projectFolderDir, fileName);
+      console.log('Caminho do arquivo no projeto:', projectPath);
 
       // Salvar o arquivo
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      await writeFile(fullPath, buffer);
+      
+      // Salvar o arquivo SOMENTE em public/uploads/videos
+      console.log('Tentando salvar arquivo em:', videosPath);
+      try {
+        await writeFile(videosPath, buffer);
+        console.log('Arquivo salvo com sucesso em:', videosPath);
+      } catch (writeError) {
+        console.error('Erro ao salvar arquivo:', writeError);
+        // Tentar método síncrono como fallback
+        fs.writeFileSync(videosPath, buffer);
+        console.log('Arquivo salvo com sucesso (método síncrono) em:', videosPath);
+      }
 
-      console.log('Arquivo salvo com sucesso:', fullPath);
+      // Construir o caminho para ser armazenado no banco de dados
+      const dbFilePath = `/uploads/videos/${fileName}`;
+      console.log('Caminho para o banco de dados:', dbFilePath);
 
       // Inserir no banco de dados
       const result = await DbService.createVideo(
         projectId,
         folderId,
         file.name,
-        filePath.replace(/\\/g, '/'), // Garantir formato correto do path
+        dbFilePath, // caminho para o banco de dados com /uploads/videos/
         file.size,
         file.type,
         null // duration será atualizada posteriormente

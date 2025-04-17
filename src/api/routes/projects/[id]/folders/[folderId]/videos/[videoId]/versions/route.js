@@ -4,6 +4,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { join } from 'path';
+import fs from 'fs';
 
 export async function GET(request, { params }) {
   try {
@@ -61,21 +62,42 @@ export async function POST(request, { params }) {
       }
 
       try {
-        // Create upload directory if it doesn't exist
-        const uploadDir = join(process.cwd(), 'public', 'uploads', projectId, folderId, videoId, 'versions');
-        await mkdir(uploadDir, { recursive: true });
-
+        // Definir o caminho raiz do projeto
+        const rootDir = process.cwd();
+        console.log('Diretório raiz (versões):', rootDir);
+        
+        // Criar diretório para versões do projeto
+        const versionDir = path.join(rootDir, 'public', 'uploads', projectId, folderId, videoId, 'versions');
+        await mkdir(versionDir, { recursive: true });
+        console.log('Diretório de versões criado:', versionDir);
+        
+        // Criar diretório public/uploads/videos
+        const videosDir = path.join(rootDir, 'public', 'uploads', 'videos');
+        await mkdir(videosDir, { recursive: true });
+        console.log('Diretório de vídeos para versões criado:', videosDir);
+        
         // Generate unique filename
         const fileName = `${randomUUID()}-${file.name}`;
-        const filePath = path.join('uploads', projectId, folderId, videoId, 'versions', fileName);
-        const fullPath = path.join(process.cwd(), 'public', filePath);
+        
+        // Caminho completo para o arquivo na pasta public/uploads/videos
+        const videosPath = path.join(videosDir, fileName);
+        console.log('Caminho do arquivo de versão em videos:', videosPath);
 
         // Save the file
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
-        await writeFile(fullPath, buffer);
-
-        console.log('Version file saved successfully:', fullPath);
+        
+        // Salvar o arquivo SOMENTE em public/uploads/videos
+        console.log('Tentando salvar versão em:', videosPath);
+        try {
+          await writeFile(videosPath, buffer);
+          console.log('Versão salva com sucesso em:', videosPath);
+        } catch (writeError) {
+          console.error('Erro ao salvar versão:', writeError);
+          // Tentar método síncrono como fallback
+          fs.writeFileSync(videosPath, buffer);
+          console.log('Versão salva com sucesso (método síncrono) em:', videosPath);
+        }
         
         // Get original video to use as source_video_id
         const originalVideo = await DbService.getVideo(videoId);
@@ -88,13 +110,17 @@ export async function POST(request, { params }) {
         // Calculate video duration (complex on server side, can leave as null)
         const duration = 0; // Will be updated by client after loading
 
+        // Construir o caminho para ser armazenado no banco de dados
+        const dbFilePath = `/uploads/videos/${fileName}`;
+        console.log('Caminho da versão para o banco de dados:', dbFilePath);
+
         // Insert the version in the database
         const result = await DbService.createVideoVersion(
           projectId,
           folderId,
           videoId,
           originalVideo.id,
-          '/'+filePath.replace(/\\/g, '/'), // Ensure correct path format
+          dbFilePath, // caminho para o banco de dados com /uploads/videos/
           file.size,
           file.type,
           duration
